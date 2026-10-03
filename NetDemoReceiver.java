@@ -185,23 +185,34 @@ public class NetDemoReceiver {
         System.out.println("\n========================================================");
         System.out.println("           [CHẾ ĐỘ 3: NHẬN UDP MULTICAST]");
         System.out.println("========================================================");
-        System.out.println("ℹ️  Thông tin nhóm Multicast Lớp D: " + MULTICAST_GROUP_IP + ":" + MULTICAST_PORT);
         System.out.println("ℹ️  Mục đích: Chứng minh cơ chế lọc gói tin (Filtering) của Multicast.");
+
+        // Cho phép người dùng tự chọn/nhập địa chỉ nhóm Multicast
+        System.out.println("\nDanh sách nhóm Multicast gợi ý:");
+        System.out.println("  • Nhóm 1 (Phòng A) : 239.1.1.1 (Mặc định)");
+        System.out.println("  • Nhóm 2 (Phòng B) : 239.1.1.2");
+        System.out.println("  • Nhóm 3 (Phòng C) : 239.1.1.3");
+        System.out.print("👉 Nhập địa chỉ IP nhóm bạn muốn đăng ký (Nhấn Enter để dùng 239.1.1.1): ");
+        String groupIp = scanner.hasNextLine() ? scanner.nextLine().trim() : "";
+        if (groupIp.isEmpty()) {
+            groupIp = "239.1.1.1";
+        }
+        System.out.println("🎯 Nhóm được chọn: " + groupIp + ":" + MULTICAST_PORT);
         System.out.println();
 
         // ==============================================================================
         // YÊU CẦU ĐẶC BIỆT THEO SKILL.MD VÀ QUY TẮC RULE 4:
         // Chương trình BẮT BUỘC phải hỏi người dùng có muốn gọi joinGroup() hay không.
         // ==============================================================================
-        System.out.print("❓ Bạn có muốn gọi hàm joinGroup() để gia nhập nhóm không? (Y/N): ");
+        System.out.print("❓ Bạn có muốn gọi hàm joinGroup() để gia nhập nhóm " + groupIp + " không? (Y/N): ");
         String answer = scanner.hasNextLine() ? scanner.nextLine().trim() : "N";
 
         boolean wantToJoin = answer.equalsIgnoreCase("Y") || answer.equalsIgnoreCase("YES");
 
-        // Khởi tạo MulticastSocket trên port 8000 theo Rule 3
+        // Khởi tạo MulticastSocket trên port theo Rule 3
         MulticastSocket socket = new MulticastSocket(MULTICAST_PORT);
         socket.setReuseAddress(true);
-        InetAddress group = InetAddress.getByName(MULTICAST_GROUP_IP);
+        InetAddress group = InetAddress.getByName(groupIp);
         java.net.NetworkInterface wifiNI = detectWifiInterface();
         if (wifiNI != null) {
             socket.setNetworkInterface(wifiNI);
@@ -211,7 +222,7 @@ public class NetDemoReceiver {
             // -------------------------------------------------------------
             // TRƯỜNG HỢP 1: NGƯỜI DÙNG CHỌN GIA NHẬP NHÓM (Y)
             // -------------------------------------------------------------
-            System.out.println("\n[Receiver - Multicast] Bước 1: Thực thi lệnh socket.joinGroup(" + MULTICAST_GROUP_IP + ")...");
+            System.out.println("\n[Receiver - Multicast] Bước 1: Thực thi lệnh socket.joinGroup(" + groupIp + ")...");
             socket.joinGroup(group);
             if (wifiNI != null) {
                 try {
@@ -223,8 +234,8 @@ public class NetDemoReceiver {
             }
             System.out.println("[Receiver - Multicast] 📡 Bản chất mạng: Card mạng (NIC) và HĐH đã gửi bản tin IGMP Report");
             System.out.println("[Receiver - Multicast]    thông báo tới Switch/Router để đăng ký địa chỉ MAC Multicast.");
-            System.out.println("[Receiver - Multicast] 👉 Hiện tại máy này ĐANG LÀ THÀNH VIÊN của nhóm " + MULTICAST_GROUP_IP);
-            System.out.println("[Receiver - Multicast] Đang lắng nghe gói tin từ Sender gửi tới nhóm " + MULTICAST_GROUP_IP + ":" + MULTICAST_PORT + "...");
+            System.out.println("[Receiver - Multicast] 👉 Hiện tại máy này ĐANG LÀ THÀNH VIÊN của nhóm " + groupIp);
+            System.out.println("[Receiver - Multicast] Đang lắng nghe gói tin từ Sender gửi tới nhóm " + groupIp + ":" + MULTICAST_PORT + "...");
 
             byte[] buffer = new byte[2048];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -238,17 +249,18 @@ public class NetDemoReceiver {
             System.out.println("[Receiver - Multicast] 🎯 ✓ NHẬN ĐƯỢC GÓI TIN MULTICAST THÀNH CÔNG!");
             System.out.println("[Receiver - Multicast]   • Người gửi (IP:Port) : " 
                     + packet.getAddress().getHostAddress() + ":" + packet.getPort());
-            System.out.println("[Receiver - Multicast]   • Nhóm Multicast đích : " + MULTICAST_GROUP_IP);
+            System.out.println("[Receiver - Multicast]   • Nhóm Multicast đích : " + groupIp);
             System.out.println("[Receiver - Multicast]   • Nội dung gói tin    : \"" + message + "\"");
             System.out.println("────────────────────────────────────────────────────────");
             System.out.println("[Receiver - Multicast] 💡 GIẢI THÍCH: Gói tin được tiếp nhận vì chương trình ĐÃ GỌI joinGroup()!");
 
             // Rời nhóm khi xong
             if (wifiNI != null) {
-                socket.leaveGroup(new java.net.InetSocketAddress(group, MULTICAST_PORT), wifiNI);
-            } else {
-                socket.leaveGroup(group);
+                try {
+                    socket.leaveGroup(new java.net.InetSocketAddress(group, 0), wifiNI);
+                } catch (Exception ignored) {}
             }
+            socket.leaveGroup(group);
             System.out.println("[Receiver - Multicast] Đã rời nhóm (leaveGroup) và đóng socket.");
 
         } else {

@@ -247,11 +247,23 @@ public class NetDemoSender {
         System.out.println("ℹ️  Đặc điểm: Gói tin gửi tới một địa chỉ nhóm IP Lớp D (224.0.0.0 - 239.255.255.255).");
         System.out.println("ℹ️  Chỉ các máy tính đã GIA NHẬP NHÓM (joinGroup) mới nhận được dữ liệu!");
 
+        // Cho phép người dùng tự chọn/nhập địa chỉ nhóm Multicast
+        System.out.println("\nDanh sách nhóm Multicast gợi ý:");
+        System.out.println("  • Nhóm 1 (Phòng A) : 239.1.1.1 (Mặc định)");
+        System.out.println("  • Nhóm 2 (Phòng B) : 239.1.1.2");
+        System.out.println("  • Nhóm 3 (Phòng C) : 239.1.1.3");
+        System.out.print("👉 Nhập địa chỉ IP nhóm muốn gửi tới (Nhấn Enter để dùng 239.1.1.1): ");
+        String groupIp = scanner.hasNextLine() ? scanner.nextLine().trim() : "";
+        if (groupIp.isEmpty()) {
+            groupIp = "239.1.1.1";
+        }
+        System.out.println("🎯 Nhóm được chọn để phát: " + groupIp);
+
         // Nhập nội dung thông điệp
-        System.out.print("Nhập thông điệp gửi tới nhóm Multicast (239.1.1.1): ");
+        System.out.print("Nhập thông điệp gửi tới nhóm Multicast (" + groupIp + "): ");
         String message = scanner.hasNextLine() ? scanner.nextLine().trim() : "";
         if (message.isEmpty()) {
-            message = "Thông điệp mật dành riêng cho thành viên nhóm Multicast 239.1.1.1!";
+            message = "Thông điệp mật dành riêng cho thành viên nhóm Multicast " + groupIp + "!";
         }
 
         System.out.println("\n--- BẮT ĐẦU QUÁ TRÌNH GỬI MULTICAST ---");
@@ -303,12 +315,12 @@ public class NetDemoSender {
 
         // Bước 4: Chuẩn bị địa chỉ nhóm Lớp D
         byte[] data = message.getBytes(StandardCharsets.UTF_8);
-        InetAddress groupAddress = InetAddress.getByName(MULTICAST_GROUP_IP);
+        InetAddress groupAddress = InetAddress.getByName(groupIp);
 
         // Bước 5: Đóng gói DatagramPacket hướng tới địa chỉ nhóm Lớp D
         System.out.println("[Sender - Multicast] Bước 3: Đóng gói DatagramPacket tới nhóm Lớp D...");
         DatagramPacket packet = new DatagramPacket(data, data.length, groupAddress, MULTICAST_PORT);
-        System.out.println("[Sender - Multicast]   • Địa chỉ nhóm Multicast (Lớp D): " + MULTICAST_GROUP_IP + ":" + MULTICAST_PORT);
+        System.out.println("[Sender - Multicast]   • Địa chỉ nhóm Multicast (Lớp D): " + groupIp + ":" + MULTICAST_PORT);
         System.out.println("[Sender - Multicast]   • Kích thước payload           : " + data.length + " bytes");
         System.out.println("[Sender - Multicast]   • Nội dung thông điệp          : \"" + message + "\"");
 
@@ -318,7 +330,7 @@ public class NetDemoSender {
         System.out.println("[Sender - Multicast] ✓ ĐÃ GỬI MULTICAST THÀNH CÔNG!");
         System.out.println("[Sender - Multicast] 💡 BẢN CHẤT CỐT LÕI (RULE 4):");
         System.out.println("[Sender - Multicast]    Gói tin này CHỈ được chuyển giao cho ứng dụng ở các máy");
-        System.out.println("[Sender - Multicast]    đã thực sự gọi hàm joinGroup(239.1.1.1). Máy nào dù mở port "
+        System.out.println("[Sender - Multicast]    đã thực sự gọi hàm joinGroup(" + groupIp + "). Máy nào dù mở port "
                 + MULTICAST_PORT + " nhưng KHÔNG joinGroup() thì sẽ HOÀN TOÀN KHÔNG NHẬN ĐƯỢC!");
 
         // Bước 7: Đóng socket
