@@ -23,7 +23,15 @@ public class NetDemoSender {
     private static final int UNICAST_PORT = 7000;
     private static final int BROADCAST_PORT = 7000;
     private static final int MULTICAST_PORT = 8000;
-    private static final String MULTICAST_GROUP_IP = "239.1.1.1";
+
+    // ==========================================================================
+    // ĐỊA CHỈ MULTICAST LỚP D (224.0.0.0 - 239.255.255.255):
+    // [CŨ] "239.1.1.1": Dải nội bộ, hay bị router WiFi/hotspot chặn IGMP.
+    // [MỚI] "224.0.0.251": Dải Link-Local Multicast (RFC 4541), Access Point
+    //                      BẮT BUỘC cho qua sóng WiFi không được chặn!
+    // ==========================================================================
+    // private static final String MULTICAST_GROUP_IP = "239.1.1.1"; // Địa chỉ cũ (bỏ comment để dùng lại)
+    private static final String MULTICAST_GROUP_IP = "224.0.0.251"; // Địa chỉ mới vượt tường lửa WiFi
     private static final String BROADCAST_IP = "255.255.255.255";
 
     public static void main(String[] args) {
