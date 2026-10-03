@@ -190,14 +190,23 @@ public class NetDemoReceiver {
         MulticastSocket socket = new MulticastSocket(MULTICAST_PORT);
         socket.setReuseAddress(true);
         InetAddress group = InetAddress.getByName(MULTICAST_GROUP_IP);
+        java.net.NetworkInterface wifiNI = detectWifiInterface();
+        if (wifiNI != null) {
+            socket.setNetworkInterface(wifiNI);
+        }
 
         if (wantToJoin) {
             // -------------------------------------------------------------
             // TRƯỜNG HỢP 1: NGƯỜI DÙNG CHỌN GIA NHẬP NHÓM (Y)
             // -------------------------------------------------------------
             System.out.println("\n[Receiver - Multicast] Bước 1: Thực thi lệnh socket.joinGroup(" + MULTICAST_GROUP_IP + ")...");
-            socket.joinGroup(group);
-            System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() THÀNH CÔNG!");
+            if (wifiNI != null) {
+                socket.joinGroup(new java.net.InetSocketAddress(group, MULTICAST_PORT), wifiNI);
+                System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() trên card [" + wifiNI.getName() + "] THÀNH CÔNG!");
+            } else {
+                socket.joinGroup(group);
+                System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() THÀNH CÔNG!");
+            }
             System.out.println("[Receiver - Multicast] 📡 Bản chất mạng: Card mạng (NIC) và HĐH đã gửi bản tin IGMP Report");
             System.out.println("[Receiver - Multicast]    thông báo tới Switch/Router để đăng ký địa chỉ MAC Multicast.");
             System.out.println("[Receiver - Multicast] 👉 Hiện tại máy này ĐANG LÀ THÀNH VIÊN của nhóm " + MULTICAST_GROUP_IP);
@@ -221,7 +230,11 @@ public class NetDemoReceiver {
             System.out.println("[Receiver - Multicast] 💡 GIẢI THÍCH: Gói tin được tiếp nhận vì chương trình ĐÃ GỌI joinGroup()!");
 
             // Rời nhóm khi xong
-            socket.leaveGroup(group);
+            if (wifiNI != null) {
+                socket.leaveGroup(new java.net.InetSocketAddress(group, MULTICAST_PORT), wifiNI);
+            } else {
+                socket.leaveGroup(group);
+            }
             System.out.println("[Receiver - Multicast] Đã rời nhóm (leaveGroup) và đóng socket.");
 
         } else {
@@ -274,5 +287,32 @@ public class NetDemoReceiver {
 
         socket.close();
         System.out.println("[Receiver - Multicast] Đã đóng socket Receiver an toàn.");
+    }
+
+    /**
+     * Hàm phụ trợ: Tự động tìm card mạng WiFi đang hoạt động.
+     * Ưu tiên dải 192.168.x.x, 10.x.x.x, và 172.x.x.x để tránh chọn nhầm card mạng ảo virbr0/VirtualBox.
+     */
+    private static java.net.NetworkInterface detectWifiInterface() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.net.NetworkInterface fallback = null;
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp() || ni.isVirtual()) continue;
+                // Bỏ qua card ảo phổ biến trên Linux và Windows
+                String name = ni.getName().toLowerCase();
+                if (name.contains("virbr") || name.contains("docker") || name.contains("vbox") || name.contains("vmnet")) continue;
+
+                for (java.net.InterfaceAddress addr : ni.getInterfaceAddresses()) {
+                    if (addr.getAddress() instanceof java.net.Inet4Address) {
+                        String ip = addr.getAddress().getHostAddress();
+                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) return ni;
+                        fallback = ni;
+                    }
+                }
+            }
+            return fallback;
+        } catch (Exception ignored) { return null; }
     }
 }
