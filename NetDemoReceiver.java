@@ -29,7 +29,8 @@ public class NetDemoReceiver {
 
     private static final int UNICAST_PORT = 7000;
     private static final int BROADCAST_PORT = 7000;
-    private static final int MULTICAST_PORT = 8000;
+    // Đổi MULTICAST_PORT sang 7000 vì cổng 7000 đã được chứng minh thông suốt qua Unicast/Broadcast!
+    private static final int MULTICAST_PORT = 7000;
 
     // ==========================================================================
     // ĐỊA CHỈ MULTICAST LỚP D (224.0.0.0 - 239.255.255.255):
