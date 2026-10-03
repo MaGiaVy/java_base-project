@@ -42,6 +42,9 @@ public class NetDemoReceiver {
     private static final String MULTICAST_GROUP_IP = "224.0.0.251"; // Địa chỉ mới vượt tường lửa WiFi
 
     public static void main(String[] args) {
+        // Ép Java dùng IPv4 stack thuần túy để tránh lỗi Windows Dual-Stack IPv6 làm mất gói Multicast
+        System.setProperty("java.net.preferIPv4Stack", "true");
+
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -209,17 +212,19 @@ public class NetDemoReceiver {
             // TRƯỜNG HỢP 1: NGƯỜI DÙNG CHỌN GIA NHẬP NHÓM (Y)
             // -------------------------------------------------------------
             System.out.println("\n[Receiver - Multicast] Bước 1: Thực thi lệnh socket.joinGroup(" + MULTICAST_GROUP_IP + ")...");
+            socket.joinGroup(group);
             if (wifiNI != null) {
-                socket.joinGroup(new java.net.InetSocketAddress(group, MULTICAST_PORT), wifiNI);
-                System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() trên card [" + wifiNI.getName() + "] THÀNH CÔNG!");
+                try {
+                    socket.joinGroup(new java.net.InetSocketAddress(group, 0), wifiNI);
+                    System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() trên card [" + wifiNI.getName() + "] THÀNH CÔNG!");
+                } catch (Exception ignored) {}
             } else {
-                socket.joinGroup(group);
                 System.out.println("[Receiver - Multicast] ✓ ĐÃ GỌI HÀM joinGroup() THÀNH CÔNG!");
             }
             System.out.println("[Receiver - Multicast] 📡 Bản chất mạng: Card mạng (NIC) và HĐH đã gửi bản tin IGMP Report");
             System.out.println("[Receiver - Multicast]    thông báo tới Switch/Router để đăng ký địa chỉ MAC Multicast.");
             System.out.println("[Receiver - Multicast] 👉 Hiện tại máy này ĐANG LÀ THÀNH VIÊN của nhóm " + MULTICAST_GROUP_IP);
-            System.out.println("[Receiver - Multicast] Đang lắng nghe gói tin từ Sender gửi tới nhóm 239.1.1.1:8000...");
+            System.out.println("[Receiver - Multicast] Đang lắng nghe gói tin từ Sender gửi tới nhóm " + MULTICAST_GROUP_IP + ":" + MULTICAST_PORT + "...");
 
             byte[] buffer = new byte[2048];
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);

@@ -36,6 +36,9 @@ public class NetDemoSender {
     private static final String BROADCAST_IP = "255.255.255.255";
 
     public static void main(String[] args) {
+        // Ép Java dùng IPv4 stack thuần túy để tránh lỗi Windows Dual-Stack IPv6 làm mất gói Multicast
+        System.setProperty("java.net.preferIPv4Stack", "true");
+
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -283,6 +286,11 @@ public class NetDemoSender {
             String wifiIp = "?";
             for (java.net.InterfaceAddress a : wifiNI.getInterfaceAddresses()) {
                 if (a.getAddress() instanceof java.net.Inet4Address) { wifiIp = a.getAddress().getHostAddress(); break; }
+            }
+            if (!wifiIp.equals("?")) {
+                try {
+                    socket.setInterface(InetAddress.getByName(wifiIp));
+                } catch (Exception ignored) {}
             }
             System.out.println("[Sender - Multicast] ✓ Đang phát qua card: [" + wifiNI.getName() + "] IP: " + wifiIp);
         } else {
