@@ -244,33 +244,91 @@ public class NetDemoSender {
 
         System.out.println("\n--- BẮT ĐẦU QUÁ TRÌNH GỬI MULTICAST ---");
 
+        // ======================================================================
+        // [PHIÊN BẢN CŨ - TẠM COMMENT LẠI] Đơn giản, dùng khi có Router WiFi thật.
+        // Để quay lại: bỏ comment khối này, comment khối [PHIÊN BẢN MỚI] bên dưới.
+        //
+        // MulticastSocket socket = new MulticastSocket();
+        // byte[] data = message.getBytes(StandardCharsets.UTF_8);
+        // InetAddress groupAddress = InetAddress.getByName(MULTICAST_GROUP_IP);
+        // DatagramPacket packet = new DatagramPacket(data, data.length, groupAddress, MULTICAST_PORT);
+        // socket.send(packet);
+        // socket.close();
+        // ======================================================================
+
+        // ======================================================================
+        // [PHIÊN BẢN MỚI - FIX HOTSPOT ĐIỆN THOẠI - ĐANG CHẠY]
+        // Thêm 2 cải tiến: setNetworkInterface (đúng card WiFi) + setTimeToLive(4)
+        // ======================================================================
+
         // Bước 1: Khởi tạo MulticastSocket (Tuân thủ nghiêm ngặt Rule 3)
         System.out.println("[Sender - Multicast] Bước 1: Khởi tạo MulticastSocket...");
         MulticastSocket socket = new MulticastSocket();
         System.out.println("[Sender - Multicast] ✓ Đã khởi tạo MulticastSocket (Tuân thủ Rule 3, không dùng DatagramSocket thuần).");
 
-        // Bước 2: Chuẩn bị địa chỉ nhóm Lớp D
+        // Bước 2: Tự động dò tìm và bind vào đúng card mạng WiFi đang dùng hotspot
+        System.out.println("[Sender - Multicast] Bước 2: Dò tìm card mạng WiFi đang kết nối hotspot...");
+        java.net.NetworkInterface wifiNI = detectWifiInterface();
+        if (wifiNI != null) {
+            socket.setNetworkInterface(wifiNI);
+            String wifiIp = "?";
+            for (java.net.InterfaceAddress a : wifiNI.getInterfaceAddresses()) {
+                if (a.getAddress() instanceof java.net.Inet4Address) { wifiIp = a.getAddress().getHostAddress(); break; }
+            }
+            System.out.println("[Sender - Multicast] ✓ Đang phát qua card: [" + wifiNI.getName() + "] IP: " + wifiIp);
+        } else {
+            System.out.println("[Sender - Multicast] ⚠️  Dùng card mặc định của hệ điều hành.");
+        }
+
+        // Bước 3: Đặt TTL = 4 để gói tin không bị lọc sớm trên mạng hotspot
+        socket.setTimeToLive(4);
+        System.out.println("[Sender - Multicast] ✓ Đã thiết lập TTL = 4.");
+
+        // Bước 4: Chuẩn bị địa chỉ nhóm Lớp D
         byte[] data = message.getBytes(StandardCharsets.UTF_8);
         InetAddress groupAddress = InetAddress.getByName(MULTICAST_GROUP_IP);
 
-        // Bước 3: Đóng gói DatagramPacket hướng tới địa chỉ nhóm Lớp D
-        System.out.println("[Sender - Multicast] Bước 2: Đóng gói DatagramPacket tới nhóm Lớp D...");
+        // Bước 5: Đóng gói DatagramPacket hướng tới địa chỉ nhóm Lớp D
+        System.out.println("[Sender - Multicast] Bước 3: Đóng gói DatagramPacket tới nhóm Lớp D...");
         DatagramPacket packet = new DatagramPacket(data, data.length, groupAddress, MULTICAST_PORT);
         System.out.println("[Sender - Multicast]   • Địa chỉ nhóm Multicast (Lớp D): " + MULTICAST_GROUP_IP + ":" + MULTICAST_PORT);
         System.out.println("[Sender - Multicast]   • Kích thước payload           : " + data.length + " bytes");
         System.out.println("[Sender - Multicast]   • Nội dung thông điệp          : \"" + message + "\"");
 
-        // Bước 4: Gửi gói tin Multicast
-        System.out.println("[Sender - Multicast] Bước 3: Đang gửi gói tin Multicast tới nhóm...");
+        // Bước 6: Gửi gói tin Multicast
+        System.out.println("[Sender - Multicast] Bước 4: Đang gửi gói tin Multicast tới nhóm...");
         socket.send(packet);
         System.out.println("[Sender - Multicast] ✓ ĐÃ GỬI MULTICAST THÀNH CÔNG!");
         System.out.println("[Sender - Multicast] 💡 BẢN CHẤT CỐT LÕI (RULE 4):");
         System.out.println("[Sender - Multicast]    Gói tin này CHỈ được chuyển giao cho ứng dụng ở các máy");
-        System.out.println("[Sender - Multicast]    đã thực sự gọi hàm joinGroup(239.1.1.1). Máy nào dù mở port " 
+        System.out.println("[Sender - Multicast]    đã thực sự gọi hàm joinGroup(239.1.1.1). Máy nào dù mở port "
                 + MULTICAST_PORT + " nhưng KHÔNG joinGroup() thì sẽ HOÀN TOÀN KHÔNG NHẬN ĐƯỢC!");
 
-        // Bước 5: Đóng socket
+        // Bước 7: Đóng socket
         socket.close();
-        System.out.println("[Sender - Multicast] Bước 4: Đã đóng MulticastSocket an toàn.");
+        System.out.println("[Sender - Multicast] Bước 5: Đã đóng MulticastSocket an toàn.");
+    }
+
+    /**
+     * Hàm phụ trợ: Tự động tìm card mạng WiFi đang hoạt động.
+     * Ưu tiên dải 192.168.x.x và 10.x.x.x (thường là hotspot điện thoại).
+     */
+    private static java.net.NetworkInterface detectWifiInterface() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.net.NetworkInterface fallback = null;
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp() || ni.isVirtual()) continue;
+                for (java.net.InterfaceAddress addr : ni.getInterfaceAddresses()) {
+                    if (addr.getAddress() instanceof java.net.Inet4Address) {
+                        String ip = addr.getAddress().getHostAddress();
+                        if (ip.startsWith("192.168.") || ip.startsWith("10.")) return ni;
+                        fallback = ni;
+                    }
+                }
+            }
+            return fallback;
+        } catch (Exception ignored) { return null; }
     }
 }

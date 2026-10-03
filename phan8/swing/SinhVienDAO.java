@@ -122,7 +122,7 @@ public class SinhVienDAO {
     // SORT: Theo tên (A-Z)
     public List<SinhVien> sortByName() {
         List<SinhVien> list = new ArrayList<>();
-        String sql = "SELECT * FROM SinhVien ORDER BY HoTen ASC";
+        String sql = "SELECT * FROM SinhVien ORDER BY SUBSTRING(HoTen FROM '[^ ]+$') ASC, HoTen ASC";
 
         try (Connection conn = DatabaseHelper.getConnection();
                 Statement stmt = conn.createStatement();
