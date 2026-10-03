@@ -294,15 +294,10 @@ public class NetDemoSender {
         System.out.println("[Sender - Multicast] Bước 2: Dò tìm card mạng WiFi đang kết nối hotspot...");
         java.net.NetworkInterface wifiNI = detectWifiInterface();
         if (wifiNI != null) {
-            socket.setNetworkInterface(wifiNI);
+            socket.setNetworkInterface(wifiNI); // Chỉ dùng 1 lệnh này, không dùng setInterface() tránh xung đột
             String wifiIp = "?";
             for (java.net.InterfaceAddress a : wifiNI.getInterfaceAddresses()) {
                 if (a.getAddress() instanceof java.net.Inet4Address) { wifiIp = a.getAddress().getHostAddress(); break; }
-            }
-            if (!wifiIp.equals("?")) {
-                try {
-                    socket.setInterface(InetAddress.getByName(wifiIp));
-                } catch (Exception ignored) {}
             }
             System.out.println("[Sender - Multicast] ✓ Đang phát qua card: [" + wifiNI.getName() + "] IP: " + wifiIp);
         } else {
@@ -324,9 +319,18 @@ public class NetDemoSender {
         System.out.println("[Sender - Multicast]   • Kích thước payload           : " + data.length + " bytes");
         System.out.println("[Sender - Multicast]   • Nội dung thông điệp          : \"" + message + "\"");
 
-        // Bước 6: Gửi gói tin Multicast
+        // Bước 6: Gửi gói tin Multicast (có fallback nếu card WiFi cụ thể không route được)
         System.out.println("[Sender - Multicast] Bước 4: Đang gửi gói tin Multicast tới nhóm...");
-        socket.send(packet);
+        try {
+            socket.send(packet);
+        } catch (java.net.SocketException e) {
+            // Fallback: Thử lại mà không buộc vào card mạng cụ thể
+            System.out.println("[Sender - Multicast] ⚠️  Card WiFi cụ thể không route được, thử lại với card mặc định...");
+            socket.close();
+            socket = new MulticastSocket();
+            socket.setTimeToLive(4);
+            socket.send(packet);
+        }
         System.out.println("[Sender - Multicast] ✓ ĐÃ GỬI MULTICAST THÀNH CÔNG!");
         System.out.println("[Sender - Multicast] 💡 BẢN CHẤT CỐT LÕI (RULE 4):");
         System.out.println("[Sender - Multicast]    Gói tin này CHỈ được chuyển giao cho ứng dụng ở các máy");
