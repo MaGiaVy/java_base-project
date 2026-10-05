@@ -1,24 +1,22 @@
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.util.List;
 
 /**
- * NetworkDemo.java - Launcher tổng hợp Broadcast vs Multicast
- * Swing GUI chính, fallback console nếu headless.
+ * NetworkDemo.java - Launcher tổng hợp UDP Broadcast & Multicast
+ * Tự động nhận diện và ưu tiên card Mobile Hotspot (192.168.137.x / Local Area Connection*).
  */
 public class NetworkDemo {
 
-    // ─── Màu sắc chủ đạo ─────────────────────────────────────────────────────
-    static final Color C_BROADCAST = new Color(0x1565C0); // xanh đậm
-    static final Color C_MULTICAST  = new Color(0x2E7D32); // xanh lá
-    static final Color C_SENDER     = new Color(0xE65100); // cam
-    static final Color C_RECEIVER   = new Color(0x6A1B9A); // tím
+    static final Color C_BROADCAST = new Color(0x1565C0);
+    static final Color C_MULTICAST  = new Color(0x2E7D32);
+    static final Color C_SENDER     = new Color(0xE65100);
+    static final Color C_RECEIVER   = new Color(0x6A1B9A);
     static final Color C_BG         = new Color(0xF5F5F5);
     static final Color C_TEXT       = Color.WHITE;
 
     public static void main(String[] args) {
-        // Kiểm tra headless
         if (GraphicsEnvironment.isHeadless()) {
             consoleMenu(args);
             return;
@@ -27,32 +25,29 @@ public class NetworkDemo {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // SWING GUI
+    // MAIN MENU: Chọn Broadcast hay Multicast
     // ═══════════════════════════════════════════════════════════════════════════
 
     static void showMainMenu(String[] args) {
         JFrame frame = new JFrame("📡 Broadcast & Multicast Demo");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(560, 400);
+        frame.setSize(580, 420);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
-        JPanel root = new JPanel(new BorderLayout(10, 10));
+        JPanel root = new JPanel(new BorderLayout(12, 12));
         root.setBackground(C_BG);
         root.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-        // ── Header ─────────────────────────────────────────────────────────────
         JLabel title = new JLabel("Chọn chế độ truyền dữ liệu / Select Mode", SwingConstants.CENTER);
         title.setFont(new Font("SansSerif", Font.BOLD, 18));
-        title.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
         root.add(title, BorderLayout.NORTH);
 
-        // ── Hai nút chính ──────────────────────────────────────────────────────
         JPanel center = new JPanel(new GridLayout(1, 2, 20, 0));
         center.setBackground(C_BG);
 
         JButton btnBroadcast = bigButton("📢 BROADCAST",
-                "<html><center>Gửi tới <b>mọi máy</b> trong LAN<br><small>DatagramSocket + setBroadcast(true)</small></center></html>",
+                "<html><center>Gửi tới <b>mọi máy</b> trong mạng<br><small>DatagramSocket + setBroadcast(true)</small></center></html>",
                 C_BROADCAST);
         JButton btnMulticast = bigButton("📡 MULTICAST",
                 "<html><center>Gửi tới <b>nhóm đã đăng ký</b><br><small>MulticastSocket + joinGroup</small></center></html>",
@@ -62,32 +57,35 @@ public class NetworkDemo {
         center.add(btnMulticast);
         root.add(center, BorderLayout.CENTER);
 
-        // ── Footer ─────────────────────────────────────────────────────────────
-        JLabel footer = new JLabel(
-                "<html><center><small>💡 Broadcast = hét cho cả phòng | Multicast = group chat</small></center></html>",
-                SwingConstants.CENTER);
-        footer.setForeground(Color.GRAY);
+        // Hiển thị card mạng hotspot được phát hiện
+        List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
+        String detectedNotice = "<html><center><small>💡 Broadcast = loa phóng thanh | Multicast = group chat<br>";
+        if (!cards.isEmpty() && cards.get(0).isHotspot) {
+            detectedNotice += "<b style='color:#D84315'>🔥 Đã tự nhận diện Mobile Hotspot: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</b>";
+        } else if (!cards.isEmpty()) {
+            detectedNotice += "<span style='color:gray'>Card mặc định: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</span>";
+        }
+        detectedNotice += "</small></center></html>";
+
+        JLabel footer = new JLabel(detectedNotice, SwingConstants.CENTER);
         root.add(footer, BorderLayout.SOUTH);
 
         frame.setContentPane(root);
 
-        // ── Action ─────────────────────────────────────────────────────────────
-        btnBroadcast.addActionListener(e -> {
-            frame.dispose();
-            showRoleMenu("BROADCAST", frame);
-        });
-        btnMulticast.addActionListener(e -> {
-            frame.dispose();
-            showRoleMenu("MULTICAST", frame);
-        });
+        btnBroadcast.addActionListener(e -> { frame.dispose(); showRoleMenu("BROADCAST"); });
+        btnMulticast.addActionListener(e -> { frame.dispose(); showRoleMenu("MULTICAST"); });
 
         frame.setVisible(true);
     }
 
-    static void showRoleMenu(String mode, JFrame parent) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROLE MENU: Cấu hình card mạng, vai trò Sender / Receiver
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    static void showRoleMenu(String mode) {
         JFrame frame = new JFrame("📡 " + mode + " - Chọn vai trò / Choose Role");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(600, 460);
+        frame.setSize(680, 530);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
@@ -95,11 +93,11 @@ public class NetworkDemo {
 
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.setBackground(C_BG);
-        root.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
 
         // Header
         JLabel title = new JLabel("Chế độ: " + mode, SwingConstants.CENTER);
-        title.setFont(new Font("SansSerif", Font.BOLD, 16));
+        title.setFont(new Font("SansSerif", Font.BOLD, 17));
         title.setForeground(modeColor);
         root.add(title, BorderLayout.NORTH);
 
@@ -107,7 +105,7 @@ public class NetworkDemo {
         JPanel cfg = new JPanel(new GridBagLayout());
         cfg.setBackground(C_BG);
         cfg.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(modeColor, 1), " ⚙️ Cấu hình / Config ",
+                BorderFactory.createLineBorder(modeColor, 1), " ⚙️ Cấu hình mạng & tài khoản ",
                 TitledBorder.LEFT, TitledBorder.TOP,
                 new Font("SansSerif", Font.BOLD, 12), modeColor));
 
@@ -116,59 +114,75 @@ public class NetworkDemo {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
 
-        // Nickname
+        // 1. Nickname
         gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0;
         cfg.add(new JLabel("Nickname:"), gbc);
         JTextField txtNick = new JTextField(System.getProperty("user.name", "user"), 14);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtNick, gbc);
 
-        // Port
+        // 2. Card mạng (Ưu tiên Hotspot tự chọn mục đầu tiên)
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
-        cfg.add(new JLabel("Port:"), gbc);
+        cfg.add(new JLabel("Card mạng:"), gbc);
+
+        List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
+        JComboBox<NetworkHelper.CardInfo> cbCards = new JComboBox<>(cards.toArray(new NetworkHelper.CardInfo[0]));
+        cbCards.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        cfg.add(cbCards, gbc);
+
+        // 3. Port
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
+        cfg.add(new JLabel("Port UDP:"), gbc);
         String defaultPort = mode.equals("BROADCAST") ? "7000" : "8000";
         JTextField txtPort = new JTextField(defaultPort, 6);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtPort, gbc);
 
-        // Multicast IP (chỉ hiện khi Multicast)
-        JLabel lblGroup = new JLabel("Nhóm multicast IP:");
-        JTextField txtGroup = new JTextField("239.1.1.1", 14);
-        if (mode.equals("MULTICAST")) {
-            gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
-            cfg.add(lblGroup, gbc);
-            gbc.gridx = 1; gbc.weightx = 1.0;
-            cfg.add(txtGroup, gbc);
-        }
-
-        // Broadcast IP (Sender Broadcast)
-        JLabel lblBcastIP = new JLabel("Broadcast IP:");
-        JTextField txtBcastIP = new JTextField("255.255.255.255", 14);
-        if (mode.equals("BROADCAST")) {
-            gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
-            cfg.add(lblBcastIP, gbc);
-            gbc.gridx = 1; gbc.weightx = 1.0;
-            cfg.add(txtBcastIP, gbc);
-        }
-
-        // Message (chỉ Sender)
-        JLabel lblMsg = new JLabel("Tin nhắn (Sender):");
-        JTextField txtMsg = new JTextField("Xin chào từ " + System.getProperty("user.name", "user"), 20);
+        // 4. IP đích (Multicast Group IP hoặc Broadcast Subnet IP)
         gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0;
-        cfg.add(lblMsg, gbc);
+        JLabel lblDest = new JLabel(mode.equals("MULTICAST") ? "Nhóm Multicast IP:" : "Broadcast IP:");
+        cfg.add(lblDest, gbc);
+
+        // Broadcast: lấy subnet broadcast của card đã chọn (vd 192.168.137.255)
+        String initialDest = "239.1.1.1";
+        if (mode.equals("BROADCAST")) {
+            if (!cards.isEmpty() && cards.get(0).broadcastIp != null) {
+                initialDest = cards.get(0).broadcastIp;
+            } else {
+                initialDest = "255.255.255.255";
+            }
+        }
+        JTextField txtDest = new JTextField(initialDest, 14);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        cfg.add(txtDest, gbc);
+
+        // Khi người dùng đổi card mạng trong combobox, tự cập nhật broadcast IP
+        cbCards.addActionListener(e -> {
+            if (mode.equals("BROADCAST")) {
+                NetworkHelper.CardInfo sel = (NetworkHelper.CardInfo) cbCards.getSelectedItem();
+                if (sel != null && sel.broadcastIp != null) {
+                    txtDest.setText(sel.broadcastIp);
+                }
+            }
+        });
+
+        // 5. Tin nhắn ban đầu
+        gbc.gridx = 0; gbc.gridy = 4; gbc.weightx = 0;
+        cfg.add(new JLabel("Tin nhắn (Sender):"), gbc);
+        JTextField txtMsg = new JTextField("Xin chào từ " + System.getProperty("user.name", "user"), 20);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtMsg, gbc);
 
         root.add(cfg, BorderLayout.CENTER);
 
-        // Buttons
-        JPanel btns = new JPanel(new GridLayout(1, 3, 14, 0));
-        btns.setBackground(C_BG);
-
+        // Buttons bottom
         JButton btnSender   = bigButton("📤 SENDER",   "<html><center>Gửi tin / Send</center></html>",   C_SENDER);
         JButton btnReceiver = bigButton("📥 RECEIVER", "<html><center>Nhận tin / Receive</center></html>", C_RECEIVER);
         JButton btnBack     = smallButton("← Quay lại", Color.GRAY);
 
+        JPanel btns = new JPanel(new GridLayout(1, 2, 14, 0));
+        btns.setBackground(C_BG);
         btns.add(btnSender);
         btns.add(btnReceiver);
 
@@ -180,35 +194,43 @@ public class NetworkDemo {
 
         frame.setContentPane(root);
 
-        // Actions
+        // ── Action: SENDER ──────────────────────────────────────────────────
         btnSender.addActionListener(e -> {
             String port = txtPort.getText().trim();
             String nick = txtNick.getText().trim();
             String msg  = txtMsg.getText().trim();
+            String dest = txtDest.getText().trim();
+            NetworkHelper.CardInfo selCard = (NetworkHelper.CardInfo) cbCards.getSelectedItem();
+            String cardIP = selCard != null ? selCard.ip : null;
+
             if (!validatePort(frame, port)) return;
             frame.dispose();
+
             if (mode.equals("BROADCAST")) {
-                String bip = txtBcastIP.getText().trim();
-                if (bip.isEmpty()) bip = "255.255.255.255";
-                BroadcastSenderGUI.launch(nick, bip, Integer.parseInt(port), msg);
+                if (dest.isEmpty()) dest = "255.255.255.255";
+                BroadcastSenderGUI.launch(nick, dest, Integer.parseInt(port), msg, cardIP);
             } else {
-                String grp = txtGroup.getText().trim();
-                if (grp.isEmpty()) grp = "239.1.1.1";
-                MulticastSenderGUI.launch(nick, grp, Integer.parseInt(port), msg);
+                if (dest.isEmpty()) dest = "239.1.1.1";
+                MulticastSenderGUI.launch(nick, dest, Integer.parseInt(port), msg, cardIP);
             }
         });
 
+        // ── Action: RECEIVER ────────────────────────────────────────────────
         btnReceiver.addActionListener(e -> {
             String port = txtPort.getText().trim();
             String nick = txtNick.getText().trim();
+            String dest = txtDest.getText().trim();
+            NetworkHelper.CardInfo selCard = (NetworkHelper.CardInfo) cbCards.getSelectedItem();
+            String cardIP = selCard != null ? selCard.ip : null;
+
             if (!validatePort(frame, port)) return;
             frame.dispose();
+
             if (mode.equals("BROADCAST")) {
-                BroadcastReceiverGUI.launch(nick, Integer.parseInt(port));
+                BroadcastReceiverGUI.launch(nick, Integer.parseInt(port), cardIP);
             } else {
-                String grp = txtGroup.getText().trim();
-                if (grp.isEmpty()) grp = "239.1.1.1";
-                MulticastReceiverGUI.launch(nick, grp, Integer.parseInt(port));
+                if (dest.isEmpty()) dest = "239.1.1.1";
+                MulticastReceiverGUI.launch(nick, dest, Integer.parseInt(port), cardIP);
             }
         });
 
@@ -220,7 +242,10 @@ public class NetworkDemo {
         frame.setVisible(true);
     }
 
-    // ── Helper tạo nút lớn ────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
     static JButton bigButton(String title, String subtitle, Color bg) {
         JButton btn = new JButton("<html><center><b>" + title + "</b><br>" + subtitle + "</center></html>");
         btn.setBackground(bg);
@@ -230,7 +255,7 @@ public class NetworkDemo {
         btn.setBorderPainted(false);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         btn.setOpaque(true);
-        btn.setPreferredSize(new Dimension(220, 100));
+        btn.setPreferredSize(new Dimension(230, 95));
         return btn;
     }
 
@@ -276,15 +301,30 @@ public class NetworkDemo {
         System.out.print("Chọn vai trò (1/2): ");
         String roleChoice = sc.nextLine().trim();
 
+        List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
+        System.out.println("\nDanh sách card mạng khả dụng:");
+        for (int i = 0; i < cards.size(); i++) {
+            System.out.println("  " + (i + 1) + ". " + cards.get(i).toString());
+        }
+        System.out.print("Chọn card [1 = mặc định/hotspot]: ");
+        String cardChoice = sc.nextLine().trim();
+        int cardIdx = 0;
+        try {
+            int c = Integer.parseInt(cardChoice);
+            if (c >= 1 && c <= cards.size()) cardIdx = c - 1;
+        } catch (Exception ignored) {}
+        NetworkHelper.CardInfo chosenCard = cards.isEmpty() ? null : cards.get(cardIdx);
+
         System.out.print("Port [7000/8000]: ");
         String portStr = sc.nextLine().trim();
         int port = portStr.isEmpty() ? (modeChoice.equals("1") ? 7000 : 8000) : Integer.parseInt(portStr);
 
         if (modeChoice.equals("1")) {
             if (roleChoice.equals("1")) {
-                System.out.print("Broadcast IP [255.255.255.255]: ");
+                String defaultBip = chosenCard != null && chosenCard.broadcastIp != null ? chosenCard.broadcastIp : "255.255.255.255";
+                System.out.print("Broadcast IP [" + defaultBip + "]: ");
                 String bip = sc.nextLine().trim();
-                if (bip.isEmpty()) bip = "255.255.255.255";
+                if (bip.isEmpty()) bip = defaultBip;
                 System.out.print("Tin nhắn: ");
                 String msg = sc.nextLine().trim();
                 try { BroadcastSenderGUI.sendConsole(bip, port, msg); }

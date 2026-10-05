@@ -6,8 +6,8 @@ import java.util.*;
 
 /**
  * BroadcastSenderGUI.java
- * Gửi broadcast tới tất cả máy trong LAN.
- * Sender gửi tới địa chỉ broadcast, không cần setBroadcast trên receiver.
+ * Gửi broadcast tới mạng LAN / Hotspot.
+ * Hỗ trợ tự tính và điền sẵn địa chỉ directed broadcast (vd 192.168.137.255 cho Mobile Hotspot).
  */
 public class BroadcastSenderGUI {
 
@@ -16,15 +16,28 @@ public class BroadcastSenderGUI {
     static String broadcastIP;
     static int port;
     static String nick;
+    static NetworkHelper.CardInfo card;
 
     public static void launch(String nickname, String bcastIP, int p, String initMsg) {
-        nick = nickname;
-        broadcastIP = bcastIP;
-        port = p;
+        launch(nickname, bcastIP, p, initMsg, null);
+    }
 
-        JFrame frame = new JFrame("📢 Broadcast SENDER  [" + bcastIP + ":" + p + "]");
+    public static void launch(String nickname, String bcastIP, int p, String initMsg, String targetCardOrIP) {
+        nick = nickname;
+        port = p;
+        broadcastIP = bcastIP;
+
+        try {
+            card = NetworkHelper.pickCard(targetCardOrIP);
+            // Nếu người dùng để 255.255.255.255 mà card có subnet broadcast riêng (vd 192.168.137.255), gợi ý dùng subnet broadcast
+            if ((broadcastIP == null || broadcastIP.equals("255.255.255.255")) && card != null && card.broadcastIp != null) {
+                broadcastIP = card.broadcastIp;
+            }
+        } catch (Exception ignored) {}
+
+        JFrame frame = new JFrame("📢 Broadcast SENDER  [" + broadcastIP + ":" + p + "]");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(620, 480);
+        frame.setSize(680, 500);
         frame.setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
@@ -32,10 +45,11 @@ public class BroadcastSenderGUI {
         root.setBackground(new Color(0xE3F2FD));
 
         // Info label
+        String cardStr = card != null ? card.displayName + " (" + card.ip + ")" : "Mặc định";
         JLabel info = new JLabel(
                 "<html><b>Broadcast Sender</b> &nbsp;|&nbsp; Nick: <b>" + nickname + "</b>" +
-                " &nbsp;|&nbsp; Gửi tới: <b>" + bcastIP + ":" + p + "</b>" +
-                "<br><small>setBroadcast(true) + DatagramSocket — gửi tới mọi máy trong LAN</small></html>");
+                " &nbsp;|&nbsp; Gửi tới: <b>" + broadcastIP + ":" + p + "</b>" +
+                "<br><small>Card mạng: <b>" + cardStr + "</b> | DatagramSocket.setBroadcast(true)</small></html>");
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
         root.add(info, BorderLayout.NORTH);
 
@@ -75,9 +89,13 @@ public class BroadcastSenderGUI {
         try {
             socket = new DatagramSocket();
             socket.setBroadcast(true);
-            appendLog("[OK] Socket mở. Sẵn sàng gửi broadcast.");
+            if (card != null) {
+                appendLog("[OK] Đang ưu tiên card: " + card.displayName + " (" + card.ip + ")"
+                        + (card.isHotspot ? " ★ [MOBILE HOTSPOT]" : ""));
+            }
+            appendLog("[OK] Socket mở sẵn sàng. Đích gửi mặc định: " + broadcastIP + ":" + port);
         } catch (Exception e) {
-            appendLog("[LỖI] Không mở được socket: " + e.getMessage());
+            appendLog("[LỖI KHỞI TẠO] " + e.getMessage());
         }
 
         // Send to 1 IP
@@ -88,7 +106,7 @@ public class BroadcastSenderGUI {
                 sendTo(broadcastIP, port, nick + ": " + msg);
                 appendLog("[GỬI → " + broadcastIP + ":" + port + "] " + nick + ": " + msg);
             } catch (Exception ex) {
-                appendLog("[LỖI] " + ex.getMessage());
+                appendLog("[LỖI GỬI] " + ex.getMessage());
             }
         });
 
@@ -98,9 +116,9 @@ public class BroadcastSenderGUI {
             if (msg.isEmpty()) return;
             try {
                 int sent = sendToAllInterfaces(port, nick + ": " + msg);
-                if (sent == 0) appendLog("[CẢNH BÁO] Không có card nào có địa chỉ broadcast.");
+                if (sent == 0) appendLog("[CẢNH BÁO] Không tìm thấy card nào có địa chỉ broadcast.");
             } catch (Exception ex) {
-                appendLog("[LỖI] " + ex.getMessage());
+                appendLog("[LỖI GỬI TẤT CẢ] " + ex.getMessage());
             }
         });
 

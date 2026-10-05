@@ -2,11 +2,11 @@ import javax.swing.*;
 import java.awt.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
 
 /**
  * MulticastReceiverGUI.java
- * Nhận multicast — BẮT BUỘC phải joinGroup(). Dùng MulticastSocket.
+ * Nhận multicast — BẮT BUỘC phải joinGroup() trên đúng card mạng.
+ * Tự động chọn card Mobile Hotspot (192.168.137.x).
  * Receiver tự động rời nhóm (leaveGroup) khi đóng cửa sổ.
  */
 public class MulticastReceiverGUI {
@@ -15,12 +15,16 @@ public class MulticastReceiverGUI {
     static volatile boolean running = false;
     static MulticastSocket socket;
     static InetSocketAddress groupAddr;
-    static NetworkInterface nif;
+    static NetworkHelper.CardInfo card;
 
     public static void launch(String nickname, String groupIP, int port) {
+        launch(nickname, groupIP, port, null);
+    }
+
+    public static void launch(String nickname, String groupIP, int port, String targetCardOrIP) {
         JFrame frame = new JFrame("📡 Multicast RECEIVER  [" + groupIP + ":" + port + "]");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(660, 480);
+        frame.setSize(680, 480);
         frame.setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
@@ -66,14 +70,14 @@ public class MulticastReceiverGUI {
         frame.setContentPane(root);
         frame.setVisible(true);
 
-        // Join
+        // Nút Join
         btnJoin.addActionListener(e -> {
             btnJoin.setEnabled(false);
             btnLeave.setEnabled(true);
-            startReceiving(groupIP, port);
+            startReceiving(groupIP, port, targetCardOrIP);
         });
 
-        // Leave
+        // Nút Leave
         btnLeave.addActionListener(e -> {
             stopReceiving();
             btnLeave.setEnabled(false);
@@ -87,22 +91,26 @@ public class MulticastReceiverGUI {
         });
     }
 
-    static void startReceiving(String groupIP, int port) {
+    static void startReceiving(String groupIP, int port, String targetCardOrIP) {
         running = true;
-        appendLog("[OK] Đang tham gia nhóm " + groupIP + ":" + port + "...");
+        appendLog("[OK] Đang chuẩn bị tham gia nhóm " + groupIP + ":" + port + "...");
 
         Thread t = new Thread(() -> {
             try {
                 InetAddress group = InetAddress.getByName(groupIP);
                 groupAddr = new InetSocketAddress(group, port);
-                nif = MulticastSenderGUI.pickBestInterface();
+                card = NetworkHelper.pickCard(targetCardOrIP);
+
+                String hsTag = card.isHotspot ? " ★ [MOBILE HOTSPOT]" : "";
+                appendLog("[OK] Đang dùng card: " + card.displayName + " (" + card.ip + ")" + hsTag);
 
                 socket = new MulticastSocket(port);
-                socket.setNetworkInterface(nif);
-                socket.joinGroup(groupAddr, nif);  // ← BẮT BUỘC phải joinGroup
+                socket.setReuseAddress(true);
+                socket.setNetworkInterface(card.nif);
+                socket.joinGroup(groupAddr, card.nif);  // ← BẮT BUỘC joinGroup trên card hotspot
 
-                appendLog("[OK] ✅ Đã joinGroup " + groupIP + " | Card: " + nif.getDisplayName());
-                appendLog("[OK] Đang chờ tin nhắn từ nhóm... (chỉ nhận từ thành viên đã gửi multicast)");
+                appendLog("[OK] ✅ Đã joinGroup(" + groupIP + ") trên card: " + card.displayName);
+                appendLog("[OK] Đang lắng nghe tin nhắn multicast... (chỉ nhận từ thành viên đã gửi tới nhóm)");
 
                 byte[] buf = new byte[4096];
                 while (running) {
@@ -115,7 +123,7 @@ public class MulticastReceiverGUI {
             } catch (Exception e) {
                 if (running) appendLog("[LỖI] " + e.getMessage());
             } finally {
-                appendLog("[DỪNG] Đã rời nhóm / leaveGroup.");
+                appendLog("[DỪNG] Đã rời nhóm / socket đóng.");
             }
         });
         t.setDaemon(true);
@@ -126,8 +134,9 @@ public class MulticastReceiverGUI {
         running = false;
         if (socket != null && !socket.isClosed()) {
             try {
-                if (groupAddr != null && nif != null)
-                    socket.leaveGroup(groupAddr, nif);  // ← leaveGroup trước khi đóng
+                if (groupAddr != null && card != null && card.nif != null) {
+                    socket.leaveGroup(groupAddr, card.nif);  // ← leaveGroup trước khi đóng
+                }
             } catch (Exception ignored) {}
             socket.close();
         }
@@ -144,16 +153,16 @@ public class MulticastReceiverGUI {
     public static void receiveConsole(String groupIP, int port) throws Exception {
         InetAddress group = InetAddress.getByName(groupIP);
         InetSocketAddress gAddr = new InetSocketAddress(group, port);
+        NetworkHelper.CardInfo c = NetworkHelper.pickCard(null);
+        System.out.println("[OK] Dùng card: " + c.displayName + " (" + c.ip + ")");
         System.out.println("[OK] Tham gia nhóm " + groupIP + ":" + port + "... (Ctrl+C để dừng)");
+
         try (MulticastSocket s = new MulticastSocket(port)) {
-            // Tự chọn interface tốt nhất
-            try {
-                NetworkInterface ni = MulticastSenderGUI.pickBestInterface();
-                s.joinGroup(gAddr, ni);
-                System.out.println("[OK] Card: " + ni.getDisplayName());
-            } catch (Exception e) {
-                s.joinGroup(gAddr, null);
-            }
+            s.setReuseAddress(true);
+            s.setNetworkInterface(c.nif);
+            s.joinGroup(gAddr, c.nif);
+            System.out.println("[OK] Đã joinGroup! Đang chờ tin nhắn...");
+
             byte[] buf = new byte[4096];
             while (true) {
                 DatagramPacket p = new DatagramPacket(buf, buf.length);
