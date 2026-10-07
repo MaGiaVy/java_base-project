@@ -1,104 +1,93 @@
-# 🚀 JAVA TCP CHAT SERVER & HTTP REST API BACKEND
+# 🚀 HỆ THỐNG ĐA GIAO THỨC: TCP CHAT, HTTP REST API & UDP MULTICAST HUB
 
-Dự án tích hợp kết hợp kiến thức **Chương 11 (TCP Multi-Client Socket)** và **Chương 12 (HTTP Server & REST API)** của môn Lập trình mạng Java.
+Hệ thống kết hợp toàn diện kiến thức:
+- **Chương 10**: UDP Multicast (Lớp D `239.1.1.1`, Port 8000, `MulticastSocket`, `joinGroup`, `leaveGroup`, TTL=1).
+- **Chương 11**: TCP Socket Multi-Client (Port 5000, `ServerSocket`, `ConcurrentHashMap`, Thread-safe, Broadcast).
+- **Chương 12**: HTTP Server & REST API (`com.sun.net.httpserver.HttpServer`, Port 8080).
+- **NetworkHelper**: Kế thừa trực tiếp từ thư mục `BroadcastMulticast`, tự động nhận diện và ưu tiên card **Mobile Hotspot** (`192.168.137.x` / `Local Area Connection*`), lọc bỏ card ảo VMware.
 
 ---
 
-## 📌 1. Kiến trúc hệ thống
+## 🏛️ 1. Mô hình hoạt động & Cầu nối 3 chiều
 
 ```
-                                  ┌────────────────────────────────────────────────────────┐
-                                  │                  ChatAndWebServer                      │
- ┌────────────────┐               │                                                        │
- │ TCP Client #1  │◄──Port 5000──►│  [Module 1: TCP Chat Server]                           │
- └────────────────┘               │   - ServerSocket(5000)                                 │
- ┌────────────────┐               │   - ExecutorService (CachedThreadPool)                 │
- │ TCP Client #2  │◄──Port 5000──►│   - Cấp phát ID: AtomicInteger                         │
- └────────────────┘               │                                                        │
-                                  │         ▲                       ▲                      │
-                                  │         │ (Shared Memory)       │                      │
-                                  │         ▼                       ▼                      │
-                                  │   ┌──────────────────────────────────────────────┐     │
-                                  │   │ ConcurrentHashMap<Integer, ClientHandler>    │     │
-                                  │   └──────────────────────────────────────────────┘     │
-                                  │         ▲                                              │
-                                  │         │ (Đọc users / Gửi broadcast)                  │
-                                  │         ▼                                              │
- ┌────────────────┐               │                                                        │
- │ Web Browser    │◄──Port 8080──►│  [Module 2: HTTP Web Server]                           │
- │ Postman / curl │               │   - com.sun.net.httpserver.HttpServer (8080)           │
- └────────────────┘               │   - GET  /              -> Web Dashboard (Màu đỏ)      │
-                                  │   - GET  /api/status    -> 200 OK                      │
-                                  │   - GET  /api/users     -> 200 OK JSON list            │
-                                  │   - POST /api/broadcast -> 201 Created                 │
-                                  └────────────────────────────────────────────────────────┘
-```
-
-### Điểm kết nối chung:
-- `ConcurrentHashMap<Integer, ClientHandler> clients`: Lưu danh sách các client đang online an toàn cho đa luồng.
-- Khi người dùng gửi `POST /api/broadcast`, HTTP Handler truy cập vào `clients` và gọi hàm `broadcast()` của TCP Server để gửi thông báo tức thì tới tất cả các TCP Client.
-
----
-
-## 📂 2. Cấu trúc thư mục
-
-- `ChatAndWebServer.java`: Server 2-trong-1 (chạy cả TCP port 5000 và HTTP port 8080 trên 2 luồng song song).
-- `TcpChatClient.java`: Client kết nối TCP Chat, hỗ trợ cả giao diện đồ họa Swing và dòng lệnh Console.
-- `run_server.bat`: Khởi động Server (tự động biên dịch nếu cần).
-- `run_client.bat`: Mở cửa sổ chat đồ họa (có thể nhấp đúp nhiều lần để mở nhiều client chat với nhau).
-- `run_client_console.bat`: Mở client ở chế độ dòng lệnh Console.
-
----
-
-## 🌐 3. Danh sách Endpoint HTTP REST API
-
-| Method | Endpoint | Mô tả | Mã phản hồi |
-|---|---|---|---|
-| `GET` | `/` | Web Dashboard quản trị màu đỏ rực rỡ, tự cập nhật danh sách client và form gửi broadcast | `200 OK` (HTML) |
-| `GET` | `/api/status` | Kiểm tra tình trạng hoạt động của Server | `200 OK` (JSON) |
-| `GET` | `/api/users` | Lấy danh sách các ClientID đang online | `200 OK` (JSON) |
-| `POST` | `/api/broadcast` | Gửi tin nhắn thông báo toàn hệ thống tới các TCP Client | `201 Created` (JSON) |
-
-**Body mẫu cho `POST /api/broadcast`:**
-```json
-{
-  "message": "Hệ thống sẽ bảo trì trong 5 phút nữa"
-}
+┌─────────────────────────────────┐        TCP        ┌────────────────────────────────────────────────────────┐
+│  Desktop Client (Swing/Console) ├──── Port 5000 ───►│                                                        │
+│  - TcpChatClient                │                   │                  ChatAndWebServer                      │
+└─────────────────────────────────┘                   │                                                        │
+                                                      │  1. TCP Server (Port 5000)                             │
+┌─────────────────────────────────┐       HTTP/AJAX   │  2. HTTP Web Server (Port 8080)                        │
+│  Web Chat Client (Browser)      ├──── Port 8080 ───►│     - Admin Dashboard: http://localhost:8080/          │
+│  - http://localhost:8080/chat   │                   │     - Web Chat Client: http://localhost:8080/chat      │
+└─────────────────────────────────┘                   │  3. Multicast Hub (Port 8000, Group 239.1.1.1)         │
+                                                      │                                                        │
+┌─────────────────────────────────┐    UDP Multicast  │     ▲ Cầu nối 3 chiều đồng bộ thông suốt tin nhắn      │
+│  Multicast Peers (LAN/Hotspot)  ├──── Port 8000 ───►│                                                        │
+│  - MulticastGroupChat / Máy khác│                   └────────────────────────────────────────────────────────┘
+└─────────────────────────────────┘
 ```
 
 ---
 
-## 🏃 4. Hướng dẫn chạy & Kiểm thử
+## 📂 2. Cấu trúc mã nguồn
+
+- `ChatAndWebServer.java`: Server trung tâm tích hợp cả 3 giao thức (TCP 5000, HTTP 8080, Multicast 8000).
+- `NetworkHelper.java`: Module nhận diện card mạng ưu tiên Mobile Hotspot (192.168.137.x).
+- `TcpChatClient.java`: Client giao diện Java Swing GUI + Console dòng lệnh.
+- `run_server.bat`: Khởi động Server 1-click.
+- `open_web_chat.bat`: Mở Web Chat Client trên trình duyệt.
+- `run_client.bat`: Mở TCP Chat Client (GUI).
+- `run_client_console.bat`: Mở TCP Chat Client (Console).
+
+---
+
+## 🌐 3. Danh sách Endpoint REST API
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/` | Web Admin Dashboard (Tone đỏ chủ đạo, quản lý Multicast, xem online, gửi broadcast) |
+| `GET` | `/chat` | Web Chat Client cho người dùng (có Modal hỏi tham gia Multicast, bong bóng chat) |
+| `GET` | `/api/status` | Tình trạng server, trạng thái Multicast, card mạng đang dùng |
+| `GET` | `/api/users` | Danh sách các user đang online (cả TCP clients lẫn Web clients) |
+| `POST` | `/api/broadcast` | Phát thông báo toàn hệ thống (tới TCP, Web và Multicast) |
+| `GET` | `/api/multicast/status` | Xem trạng thái nhóm Multicast hiện tại |
+| `POST` | `/api/multicast/join` | Tham gia vào nhóm Multicast mới `{"group": "239.1.1.1"}` |
+| `POST` | `/api/multicast/leave` | Rời khỏi nhóm Multicast |
+| `POST` | `/api/multicast/send` | Bắn gói tin ra nhóm Multicast `{"message": "..."}` |
+| `GET` | `/api/chat/messages?since=ID` | Lấy danh sách tin nhắn mới theo thời gian thực |
+| `POST` | `/api/chat/send` | Gửi tin nhắn từ Web Client `{"sender": "Vy", "message": "..."}` |
+| `POST` | `/api/webclient/register` | Đăng ký user Web Client mới kèm lựa chọn Multicast |
+
+---
+
+## 🏃 4. Hướng dẫn kiểm thử thực tế
 
 ### Bước 1: Khởi động Server
-Nhấp đúp vào `run_server.bat` hoặc mở terminal chạy:
+Chạy `run_server.bat` hoặc lệnh:
 ```cmd
 java -cp . ChatAndWebServer
 ```
 
-### Bước 2: Mở Client Chat TCP
-Nhấp đúp vào `run_client.bat` 2-3 lần để mở 2-3 cửa sổ chat, thử gõ tin nhắn qua lại giữa các client.
-
-### Bước 3: Kiểm thử Web Dashboard
-Mở trình duyệt truy cập:
+### Bước 2: Kiểm thử Web Chat Client (mở nhiều tab trình duyệt)
+Chạy `open_web_chat.bat` hoặc mở trình duyệt truy cập:
 ```
-http://localhost:8080/
+http://localhost:8080/chat
 ```
-- Bạn sẽ thấy giao diện quản trị màu đỏ với số lượng user online.
-- Nhập tin nhắn vào ô broadcast rồi nhấn **GỬI BROADCAST NGAY**.
-- Tất cả các cửa sổ TCP Client sẽ lập tức nhận được dòng tin:
-  `[THÔNG BÁO TỪ WEB HTTP]: ...`
+1. **Hộp thoại (Modal) xuất hiện ngay lập tức**:
+   - Nhập Tên hiển thị (Nickname), ví dụ: `Vy`.
+   - Hệ thống hỏi: **"Bạn có muốn tham gia nhóm Multicast không?"**.
+   - Có thể nhập IP nhóm (mặc định `239.1.1.1`).
+   - Bấm **"CÓ, Tham Gia Nhóm"** hoặc **"KHÔNG, Chỉ Chat Web"**.
+2. Mở thêm 1 tab nữa tại `http://localhost:8080/chat` đặt tên là `Hùng`:
+   - Chat qua lại giữa 2 tab trình duyệt hoàn toàn theo thời gian thực!
 
-### Bước 4: Test bằng Postman hoặc curl
-- **Kiểm tra trạng thái:**
-  ```cmd
-  curl http://localhost:8080/api/status
-  ```
-- **Lấy danh sách client:**
-  ```cmd
-  curl http://localhost:8080/api/users
-  ```
-- **Gửi broadcast qua API:**
-  ```cmd
-  curl -X POST http://localhost:8080/api/broadcast -H "Content-Type: application/json" -d "{\"message\":\"Thong bao tu Postman\"}"
-  ```
+### Bước 3: Kiểm thử đồng bộ với TCP Desktop Client
+Chạy `run_client.bat` để mở cửa sổ chat Java:
+- Gõ tin nhắn ở TCP Desktop Client -> Lập tức xuất hiện ở cả 2 tab Web Chat!
+- Gõ tin nhắn ở Web Chat -> Lập tức xuất hiện ở TCP Desktop Client!
+
+### Bước 4: Kiểm thử Multicast từ Web Admin Dashboard
+Truy cập `http://localhost:8080/`:
+- Xem trạng thái card mạng Hotspot.
+- Thử bấm **Tham Gia Nhóm** hoặc **Rời Nhóm** Multicast trực tiếp trên giao diện web.
+- Nhập tin nhắn và bấm **"Chỉ gửi ra Multicast UDP"** hoặc **"Phát Broadcast Ngay"**.

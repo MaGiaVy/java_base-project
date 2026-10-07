@@ -105,6 +105,7 @@ public class TcpChatClient {
         private JTextField inputField;
         private JButton sendButton;
         private JLabel statusLabel;
+        private JCheckBox chkMulticast;
 
         public ChatClientGui(String host, int port) {
             this.host = host;
@@ -150,7 +151,38 @@ public class TcpChatClient {
             scrollPane.setBorder(BorderFactory.createLineBorder(new Color(0xE0E0E0)));
             root.add(scrollPane, BorderLayout.CENTER);
 
+            // Channel bar & quick buttons
+            JPanel channelBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+            channelBar.setBackground(new Color(0xFFF5F5));
+            channelBar.setBorder(BorderFactory.createMatteBorder(1, 0, 1, 0, new Color(0xFFCDD2)));
+
+            chkMulticast = new JCheckBox("Gửi vào Multicast (/mcast)");
+            chkMulticast.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            chkMulticast.setForeground(new Color(0x2E7D32));
+            chkMulticast.setOpaque(false);
+
+            JButton btnJoinQuick = new JButton("Vào nhóm 239.1.1.1");
+            btnJoinQuick.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnJoinQuick.addActionListener(e -> {
+                inputField.setText("/join 239.1.1.1");
+                sendMessage();
+            });
+
+            JButton btnLeaveQuick = new JButton("Rời nhóm Multicast");
+            btnLeaveQuick.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnLeaveQuick.addActionListener(e -> {
+                inputField.setText("/leave");
+                sendMessage();
+            });
+
+            channelBar.add(chkMulticast);
+            channelBar.add(btnJoinQuick);
+            channelBar.add(btnLeaveQuick);
+
             // Input bar
+            JPanel bottomContainer = new JPanel(new BorderLayout(0, 6));
+            bottomContainer.add(channelBar, BorderLayout.NORTH);
+
             JPanel inputPanel = new JPanel(new BorderLayout(8, 0));
             inputField = new JTextField();
             inputField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -165,9 +197,21 @@ public class TcpChatClient {
 
             inputPanel.add(inputField, BorderLayout.CENTER);
             inputPanel.add(sendButton, BorderLayout.EAST);
-            root.add(inputPanel, BorderLayout.SOUTH);
+            bottomContainer.add(inputPanel, BorderLayout.SOUTH);
+            root.add(bottomContainer, BorderLayout.SOUTH);
 
             setContentPane(root);
+
+            // Đổi màu nút gửi khi tích chọn Multicast
+            chkMulticast.addActionListener(e -> {
+                if (chkMulticast.isSelected()) {
+                    sendButton.setBackground(new Color(0x2E7D32));
+                    inputField.setToolTipText("Tin nhắn sẽ được gửi riêng vào nhóm Multicast");
+                } else {
+                    sendButton.setBackground(new Color(0xC62828));
+                    inputField.setToolTipText("Tin nhắn gửi vào phòng chat chung");
+                }
+            });
 
             // Action gửi tin
             ActionListener sendAction = e -> sendMessage();
@@ -221,6 +265,10 @@ public class TcpChatClient {
         private void sendMessage() {
             String text = inputField.getText().trim();
             if (text.isEmpty() || writer == null) return;
+
+            if (chkMulticast != null && chkMulticast.isSelected() && !text.startsWith("/")) {
+                text = "/mcast " + text;
+            }
 
             try {
                 writer.write(text);
