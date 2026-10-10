@@ -1,23 +1,20 @@
 @echo off
 chcp 65001 >nul
-echo ===========================================
-echo   Broadcast ^& Multicast Demo - Java GUI
-echo ===========================================
+echo ========================================================
+echo   UDP Unified Chat (Gộp Broadcast ^& Multicast) - Java GUI
+echo ========================================================
 echo.
 
-:: Compile nếu chưa có .class
-if not exist NetworkDemo.class (
-    echo [COMPILE] Đang biên dịch...
-    javac -encoding UTF-8 *.java
-    if errorlevel 1 (
-        echo [LỖI] Biên dịch thất bại!
-        pause
-        exit /b 1
-    )
-    echo [OK] Biên dịch xong.
-    echo.
+echo [COMPILE] Đang biên dịch các file Java...
+javac -encoding UTF-8 *.java
+if errorlevel 1 (
+    echo [LỖI] Biên dịch thất bại! Vui lòng kiểm tra mã nguồn.
+    pause
+    exit /b 1
 )
+echo [OK] Biên dịch hoàn tất!
+echo.
 
-echo [CHẠY] Khởi động NetworkDemo...
+echo [CHẠY] Khởi động UnifiedChatGUI...
 java -Dfile.encoding=UTF-8 NetworkDemo
 pause

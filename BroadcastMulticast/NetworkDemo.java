@@ -21,7 +21,7 @@ public class NetworkDemo {
             consoleMenu(args);
             return;
         }
-        SwingUtilities.invokeLater(() -> showMainMenu(args));
+        UnifiedChatGUI.main(args);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -30,32 +30,39 @@ public class NetworkDemo {
 
     static void showMainMenu(String[] args) {
         JFrame frame = new JFrame("📡 Broadcast & Multicast Demo");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(580, 420);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        frame.setSize(620, 480);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
         JPanel root = new JPanel(new BorderLayout(12, 12));
         root.setBackground(C_BG);
-        root.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        root.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
 
         JLabel title = new JLabel("Chọn chế độ truyền dữ liệu / Select Mode", SwingConstants.CENTER);
         title.setFont(new Font("SansSerif", Font.BOLD, 18));
         root.add(title, BorderLayout.NORTH);
 
-        JPanel center = new JPanel(new GridLayout(1, 2, 20, 0));
+        JPanel center = new JPanel(new GridLayout(3, 1, 0, 10));
         center.setBackground(C_BG);
 
-        JButton btnBroadcast = bigButton("📢 BROADCAST",
+        JButton btnUnified = bigButton("💬 PHÒNG CHAT HỢP NHẤT (KHUYÊN DÙNG)",
+                "<html><center>Gộp <b>Broadcast & Multicast</b> trong 1 đoạn chat duy nhất (Gửi & Nhận 2 chiều)</center></html>",
+                new Color(0x00796B));
+
+        JButton btnBroadcast = bigButton("📢 BROADCAST RIÊNG",
                 "<html><center>Gửi tới <b>mọi máy</b> trong mạng<br><small>DatagramSocket + setBroadcast(true)</small></center></html>",
                 C_BROADCAST);
-        JButton btnMulticast = bigButton("📡 MULTICAST",
+        JButton btnMulticast = bigButton("📡 MULTICAST RIÊNG",
                 "<html><center>Gửi tới <b>nhóm đã đăng ký</b><br><small>MulticastSocket + joinGroup</small></center></html>",
                 C_MULTICAST);
 
+        center.add(btnUnified);
         center.add(btnBroadcast);
         center.add(btnMulticast);
         root.add(center, BorderLayout.CENTER);
+
+        btnUnified.addActionListener(e -> { frame.dispose(); UnifiedChatGUI.main(new String[0]); });
 
         // Hiển thị card mạng hotspot được phát hiện
         List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
