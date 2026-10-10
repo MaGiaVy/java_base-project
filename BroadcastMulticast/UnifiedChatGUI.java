@@ -56,6 +56,7 @@ public class UnifiedChatGUI extends JFrame {
     private JCheckBox chkFilterSelf;
 
     // Quản lý Socket và Đa luồng
+    private final boolean isMainWindow;
     private volatile boolean connected = false;
     private DatagramSocket bcastSocket;
     private MulticastSocket mcastSocket;
@@ -65,24 +66,30 @@ public class UnifiedChatGUI extends JFrame {
     private Thread bcastThread;
     private Thread mcastThread;
 
-    // Bộ nhớ đệm tin nhắn đã gửi gần đây (để lọc loopback/echo của chính máy mình)
+    // Bộ nhớ đệm ID tin nhắn đã gửi (để lọc chính xác loopback/echo của chính máy mình)
+    private final ConcurrentHashMap<String, Long> mySentMsgIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> recentSentMessages = new ConcurrentHashMap<>();
 
     private static final SimpleDateFormat TIME_FMT = new SimpleDateFormat("HH:mm:ss");
 
     public UnifiedChatGUI() {
-        this(System.getProperty("user.name", "User"));
+        this(System.getProperty("user.name", "User"), true);
     }
 
     public UnifiedChatGUI(String initialNick) {
+        this(initialNick, false);
+    }
+
+    public UnifiedChatGUI(String initialNick, boolean isMain) {
         super("💬 UDP Unified Chat — Gộp Broadcast & Multicast");
+        this.isMainWindow = isMain;
         initUI(initialNick);
         // Tự động kết nối khi khởi động
         SwingUtilities.invokeLater(this::startChat);
     }
 
     private void initUI(String initialNick) {
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setDefaultCloseOperation(isMainWindow ? JFrame.EXIT_ON_CLOSE : JFrame.DISPOSE_ON_CLOSE);
         setSize(860, 680);
         setMinimumSize(new Dimension(720, 520));
         setLocationRelativeTo(null);
@@ -133,6 +140,9 @@ public class UnifiedChatGUI extends JFrame {
             @Override
             public void windowClosing(WindowEvent e) {
                 stopChat();
+                if (isMainWindow) {
+                    System.exit(0);
+                }
             }
         });
     }
@@ -524,8 +534,26 @@ public class UnifiedChatGUI extends JFrame {
 
                 InetAddress group = InetAddress.getByName(groupIP);
                 mcastGroupAddress = new InetSocketAddress(group, port);
+                boolean joined = false;
                 if (card != null && card.nif != null) {
-                    mcastSocket.joinGroup(mcastGroupAddress, card.nif);
+                    try {
+                        mcastSocket.setNetworkInterface(card.nif);
+                        mcastSocket.joinGroup(mcastGroupAddress, card.nif);
+                        joined = true;
+                    } catch (Exception ex) {
+                        appendSystemMessage("⚠️ Không thể gán card " + card.displayName + " cho Multicast: " + ex.getMessage() + ". Đang dùng interface mặc định...", "orange");
+                    }
+                }
+                if (!joined) {
+                    try {
+                        mcastSocket.joinGroup(mcastGroupAddress, null);
+                    } catch (Exception ex) {
+                        try {
+                            mcastSocket.joinGroup(group);
+                        } catch (Exception ex2) {
+                            if (connected) appendSystemMessage("⚠️ Lỗi joinGroup Multicast: " + ex2.getMessage(), "red");
+                        }
+                    }
                 }
 
                 byte[] buf = new byte[4096];
@@ -554,14 +582,27 @@ public class UnifiedChatGUI extends JFrame {
             try {
                 mcastSocket = new MulticastSocket(port);
                 mcastSocket.setReuseAddress(true);
-                if (card != null && card.nif != null) {
-                    mcastSocket.setNetworkInterface(card.nif);
-                }
-
                 InetAddress group = InetAddress.getByName(groupIP);
                 mcastGroupAddress = new InetSocketAddress(group, port);
+
+                boolean joined = false;
                 if (card != null && card.nif != null) {
-                    mcastSocket.joinGroup(mcastGroupAddress, card.nif);
+                    try {
+                        mcastSocket.setNetworkInterface(card.nif);
+                        mcastSocket.joinGroup(mcastGroupAddress, card.nif);
+                        joined = true;
+                    } catch (Exception ex) {
+                        appendSystemMessage("⚠️ Không thể gán card cho Unified Socket: " + ex.getMessage(), "orange");
+                    }
+                }
+                if (!joined) {
+                    try {
+                        mcastSocket.joinGroup(mcastGroupAddress, null);
+                    } catch (Exception ex) {
+                        try {
+                            mcastSocket.joinGroup(group);
+                        } catch (Exception ignored) {}
+                    }
                 }
 
                 byte[] buf = new byte[4096];
@@ -609,22 +650,28 @@ public class UnifiedChatGUI extends JFrame {
 
         String fullMessage = nick + ": " + text;
 
-        // Lưu vào cache để nhận diện loopback/echo của chính máy mình
+        // Sinh msgId duy nhất để lọc chính xác tin nhắn echo của máy mình
+        String msgId = UUID.randomUUID().toString().substring(0, 8);
         long now = System.currentTimeMillis();
+        mySentMsgIds.put(msgId, now);
+        // Dọn dẹp cache ID cũ hơn 15 giây
+        mySentMsgIds.entrySet().removeIf(e -> now - e.getValue() > 15000);
+
         recentSentMessages.put(fullMessage, now);
-        // Dọn dẹp các tin nhắn cũ hơn 5 giây
         recentSentMessages.entrySet().removeIf(e -> now - e.getValue() > 5000);
+
+        String wirePayload = "#MSG#" + msgId + "#" + fullMessage;
 
         try {
             if (doBcast) {
                 String bcastIP = txtBcastIP.getText().trim();
                 int bcastPort = Integer.parseInt(txtBcastPort.getText().trim());
-                sendBroadcast(fullMessage, bcastIP, bcastPort);
+                sendBroadcast(wirePayload, bcastIP, bcastPort);
             }
             if (doMcast) {
                 String mcastIP = txtMcastIP.getText().trim();
                 int mcastPort = Integer.parseInt(txtMcastPort.getText().trim());
-                sendMulticast(fullMessage, mcastIP, mcastPort);
+                sendMulticast(wirePayload, mcastIP, mcastPort);
             }
 
             // Vẽ tin nhắn của chính mình lên giao diện
@@ -643,8 +690,19 @@ public class UnifiedChatGUI extends JFrame {
         byte[] data = payload.getBytes(StandardCharsets.UTF_8);
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.setBroadcast(true);
-            InetAddress addr = InetAddress.getByName(ip);
-            socket.send(new DatagramPacket(data, data.length, addr, port));
+
+            // Gửi tới cả IP cấu hình (subnet broadcast), card broadcast, và 255.255.255.255
+            Set<String> targets = new LinkedHashSet<>();
+            if (ip != null && !ip.trim().isEmpty()) targets.add(ip.trim());
+            if (currentCard != null && currentCard.broadcastIp != null) targets.add(currentCard.broadcastIp);
+            targets.add("255.255.255.255");
+
+            for (String target : targets) {
+                try {
+                    InetAddress addr = InetAddress.getByName(target);
+                    socket.send(new DatagramPacket(data, data.length, addr, port));
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -652,18 +710,34 @@ public class UnifiedChatGUI extends JFrame {
         byte[] data = payload.getBytes(StandardCharsets.UTF_8);
         try (MulticastSocket socket = new MulticastSocket()) {
             if (currentCard != null && currentCard.nif != null) {
-                socket.setNetworkInterface(currentCard.nif);
+                try { socket.setNetworkInterface(currentCard.nif); } catch (Exception ignored) {}
+                try { socket.setInterface(InetAddress.getByName(currentCard.ip)); } catch (Exception ignored) {}
             }
-            socket.setTimeToLive(1); // Chỉ trong mạng nội bộ LAN / Hotspot
+            socket.setTimeToLive(32); // TTL=32 an toàn khi đi qua hotspot virtual bridge
             InetAddress group = InetAddress.getByName(groupIP);
             socket.send(new DatagramPacket(data, data.length, group, port));
         }
     }
 
     private void handleIncomingPacket(String channel, String senderIP, String raw) {
-        // Lọc loopback: Nếu là tin do chính mình vừa gửi và người dùng bật lọc
-        if (chkFilterSelf.isSelected() && recentSentMessages.containsKey(raw)) {
-            return;
+        // 1. Kiểm tra format có gắn msgId
+        if (raw.startsWith("#MSG#")) {
+            int secondHash = raw.indexOf('#', 5);
+            if (secondHash > 5) {
+                String incomingId = raw.substring(5, secondHash);
+                // Nếu chính máy này gửi ra gói tin này thì bỏ qua (lọc loopback)
+                if (chkFilterSelf.isSelected() && mySentMsgIds.containsKey(incomingId)) {
+                    return;
+                }
+                raw = raw.substring(secondHash + 1); // Trích xuất lại "Nick: Text"
+            }
+        } else {
+            // Tương thích ngược với các gói tin cũ
+            if (chkFilterSelf.isSelected() && recentSentMessages.containsKey(raw)) {
+                if (currentCard != null && (senderIP.startsWith(currentCard.ip) || senderIP.startsWith("127.0.0.1"))) {
+                    return;
+                }
+            }
         }
 
         // Tách Nickname và Nội dung
