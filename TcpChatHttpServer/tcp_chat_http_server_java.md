@@ -32,11 +32,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 // Lưu tất cả client đang kết nối
 // Key: Client ID, Value: ClientHandler (chứa Socket + ID)
-static final ConcurrentHashMap<Integer, ClientHandler> clients = 
+static final ConcurrentHashMap<Integer, ClientHandler> clients =
     new ConcurrentHashMap<>();
 ```
 
 **Tại sao dùng `ConcurrentHashMap`?**
+
 - Nhiều luồng (Client 1, 2, 3...) cùng lúc thêm/xóa client.
 - `HashMap` thường không an toàn → dễ crash khi thay đổi.
 - `ConcurrentHashMap` cho phép đọc/ghi đồng thời an toàn.
@@ -51,9 +52,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 
 public class TcpChatServer {
-    static final ConcurrentHashMap<Integer, ClientHandler> clients = 
+    static final ConcurrentHashMap<Integer, ClientHandler> clients =
         new ConcurrentHashMap<>();
-    static final ConcurrentLinkedQueue<String> messageHistory = 
+    static final ConcurrentLinkedQueue<String> messageHistory =
         new ConcurrentLinkedQueue<>();  // Lưu lịch sử 100 tin nhắn gần nhất
     static int nextClientId = 0;
     static final Object idLock = new Object();
@@ -71,9 +72,9 @@ public class TcpChatServer {
             synchronized (idLock) {
                 clientId = ++nextClientId;
             }
-            System.out.println("[+] Client #" + clientId + " kết nối từ " + 
+            System.out.println("[+] Client #" + clientId + " kết nối từ " +
                 socket.getInetAddress().getHostAddress());
-            
+
             ClientHandler handler = new ClientHandler(socket, clientId);
             clients.put(clientId, handler);
             executor.execute(handler);
@@ -224,6 +225,7 @@ public class TcpChatClient {
 ```
 
 **Cách chạy:**
+
 ```bash
 # Terminal 1: Khởi động server
 java TcpChatServer
@@ -368,13 +370,13 @@ class MessagePostHandler implements HttpHandler {
         }
 
         if (text.isEmpty()) {
-            sendResponse(exchange, 400, "application/json", 
+            sendResponse(exchange, 400, "application/json",
                 "{\"error\":\"text field is required\"}");
             return;
         }
 
         TcpChatServer.broadcastMessage("[HTTP] " + text);
-        sendResponse(exchange, 201, "application/json", 
+        sendResponse(exchange, 201, "application/json",
             "{\"message\":\"Message sent\"}");
     }
 }
@@ -404,7 +406,7 @@ class HistoryHandler implements HttpHandler {
 }
 
 // Hàm helper gửi Response
-static void sendResponse(HttpExchange exchange, int statusCode, 
+static void sendResponse(HttpExchange exchange, int statusCode,
         String contentType, String body) throws IOException {
     byte[] data = body.getBytes(StandardCharsets.UTF_8);
     exchange.getResponseHeaders().add("Content-Type", contentType);
@@ -526,12 +528,14 @@ public class HttpChatClient {
 ### 4.1 Kiểm tra toàn bộ
 
 **Terminal 1: TCP Server (kèm HTTP Server)**
+
 ```bash
 javac TcpChatServer.java
 java TcpChatServer
 ```
 
 **Terminal 2, 3, 4: TCP Client**
+
 ```bash
 javac TcpChatClient.java
 java TcpChatClient localhost 5000
@@ -540,12 +544,14 @@ java TcpChatClient localhost 5000
 ```
 
 **Terminal 5: HTTP Client (tuỳ chọn)**
+
 ```bash
 javac HttpChatClient.java
 java HttpChatClient
 ```
 
 **Browser hoặc curl (tuỳ chọn):**
+
 ```bash
 # Xem trang chủ
 curl http://localhost:8080/
@@ -583,13 +589,13 @@ curl http://localhost:8080/api/history
 
 ## Phần 5: Tóm tắt khái niệm
 
-| Chương | Nội dung | Cấu trúc dữ liệu | Thread-safe | Ghi chú |
-|---|---|---|---|---|
-| **11** | TCP Multi-threading | `ConcurrentHashMap<ID, Handler>` | ✓ Có | Xử lý nhiều client cùng lúc |
-| **11** | Broadcast Message | Vòng lặp `for (handler : clients)` | ✓ Thread-safe | Xóa client nếu lỗi |
-| **12** | HTTP GET | Đọc danh sách từ `ConcurrentHashMap` | ✓ Tự động | Trả JSON |
-| **12** | HTTP POST | Nhận JSON → Parse → Broadcast | ✓ Atomic | Trả JSON + Status |
-| **12** | HTTP Client | `HttpClient.send()` | ✓ Có | Timeout, SSL hỗ trợ |
+| Chương | Nội dung            | Cấu trúc dữ liệu                     | Thread-safe   | Ghi chú                     |
+| ------ | ------------------- | ------------------------------------ | ------------- | --------------------------- |
+| **11** | TCP Multi-threading | `ConcurrentHashMap<ID, Handler>`     | ✓ Có          | Xử lý nhiều client cùng lúc |
+| **11** | Broadcast Message   | Vòng lặp `for (handler : clients)`   | ✓ Thread-safe | Xóa client nếu lỗi          |
+| **12** | HTTP GET            | Đọc danh sách từ `ConcurrentHashMap` | ✓ Tự động     | Trả JSON                    |
+| **12** | HTTP POST           | Nhận JSON → Parse → Broadcast        | ✓ Atomic      | Trả JSON + Status           |
+| **12** | HTTP Client         | `HttpClient.send()`                  | ✓ Có          | Timeout, SSL hỗ trợ         |
 
 ---
 
@@ -608,3 +614,42 @@ curl http://localhost:8080/api/history
 - **Xác thực client** (username/password).
 - **Phòng chat riêng** (mỗi phòng một broadcast list).
 - **WebSocket** (thay HTTP polling bằng WebSocket).
+
+1. Bốn thành phần trong sơ đồ:
+   Sơ đồ chia làm 2 bên (Bên trái là Nhận/Client, Bên phải là Phát/Server):
+
+Bên trái (Các HTTP Client):
+
+Client: Cụm từ được khoanh tròn bên trên. Đây chính là HTTP Client do bạn tự code (bằng Java hoặc C# như học ở Chương 12).
+
+firefox: Cụm từ được khoanh tròn bên dưới. Đây đại diện cho một trình duyệt web chuẩn có sẵn (Firefox, Chrome, Edge...).
+
+Bên phải (Các HTTP Server):
+
+Server: Đây chính là HTTP Server do bạn tự code. Dưới chữ Server thầy có ghi chú chứa các file P3.HTM, P4.HTM (các trang HTML giả định).
+
+IIS (web): Chữ IIS(web) được viết rất rõ. Đây là Internet Information Services - một Web Server chuẩn và chuyên nghiệp của Microsoft. Dưới IIS thầy có ghi chú chứa các file P1.HTM, P2.HTM.
+
+2. Phân tích 4 đường chéo (4 kịch bản giao tiếp):
+   Các mũi tên hai chiều thể hiện việc gửi Request và nhận Response. Thầy yêu cầu bạn phải đảm bảo hệ thống có thể giao tiếp chéo thành công trong cả 4 trường hợp sau:
+
+Đường 1 (Client tự code <-> Server tự code): Ứng dụng Client của bạn phải gọi thành công và lấy được nội dung trang P3.HTM hoặc P4.HTM từ Server do chính bạn viết. (Đây là mức cơ bản nhất, tự mình nói chuyện với mình).
+
+Đường 2 (Client tự code <-> IIS Web Server): Đây là thử thách số 1. Chương trình Client của bạn phải gửi request chuẩn đến mức máy chủ chuyên nghiệp như IIS cũng hiểu được và trả về trang P1.HTM hoặc P2.HTM cho bạn.
+
+Đường 3 (Firefox <-> Server tự code): Đây là thử thách số 2. Bạn dùng trình duyệt Firefox gõ địa chỉ trỏ vào Server của bạn. Server của bạn phải xử lý và trả về cấu trúc HTTP (Status code, Header, Body) chuẩn đến mức trình duyệt Firefox có thể render ra được giao diện trang P3.HTM/P4.HTM chứ không bị báo lỗi.
+
+Đường 4 (Firefox <-> IIS Web Server): Đây là đường chuẩn mặc định, không cần code gì cả, dùng để đối chiếu so sánh xem 3 đường kia có chạy ra kết quả giống đường này không.
+
+Tóm lại ý đồ của thầy là gì?
+Thầy muốn nhấn mạnh rằng: Giao thức mạng (như HTTP) là một chuẩn mực chung (Protocol). Nếu bạn code đúng chuẩn HTTP, thì ứng dụng của bạn không bị "đóng cửa" tự chơi với nhau, mà Client của bạn có thể nói chuyện với bất kỳ Web Server nào trên thế giới (như IIS), và Server của bạn có thể phục vụ bất kỳ trình duyệt nào (như Firefox).
+
+Bạn cần làm gì tiếp theo:
+
+Code 1 cái HTTP Client có khả năng nhập URL và tải nội dung HTML về (Chương 12 có bài này).
+
+Code 1 cái HTTP Server để host 2 file P3.HTM, P4.HTM.
+
+Bật Windows Features để cài đặt tính năng IIS (Internet Information Services) có sẵn trên Windows máy bạn, tạo một thư mục ảo host 2 file P1.HTM, P2.HTM.
+
+Mở tất cả lên và test chéo 4 đường như sơ đồ thầy vẽ để báo cáo kết quả!

@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -478,7 +479,7 @@ public class ChatAndWebServer {
     // ------------------------------------------------------------------------
 
     /**
-     * GET / : Web Admin Dashboard
+     * GET / : Web Admin Dashboard & Phân phối file tĩnh HTML (P3.HTM, P4.HTM - Test chéo 4 đường)
      */
     static class AdminDashboardHandler implements HttpHandler {
         @Override
@@ -488,10 +489,49 @@ public class ChatAndWebServer {
                 exchange.sendResponseHeaders(204, -1); return;
             }
             if (!checkMethod(exchange, "GET")) return;
-            if (!"/".equals(exchange.getRequestURI().getPath())) {
-                sendErrorResponse(exchange, 404, "Đường dẫn không tồn tại (Not Found)"); return;
+
+            String path = exchange.getRequestURI().getPath();
+
+            // 1. Nếu là trang chủ "/" -> Hiển thị Web Admin Dashboard
+            if ("/".equals(path)) {
+                sendHtmlResponse(exchange, 200, renderAdminDashboardHtml());
+                return;
             }
-            sendHtmlResponse(exchange, 200, renderAdminDashboardHtml());
+
+            // 2. Hỗ trợ phân phối file tĩnh HTML (P3.html, P4.html, P3.HTM...) theo bài toán Test Chéo 4 Đường của thầy
+            String fileName = path.startsWith("/") ? path.substring(1) : path;
+            File file = new File(fileName);
+
+            // Tự động tìm kiếm linh hoạt giữa .html và .htm
+            if (!file.exists()) {
+                if (fileName.toLowerCase().endsWith(".htm")) {
+                    File alt = new File(fileName + "l");
+                    if (alt.exists()) file = alt;
+                } else if (fileName.toLowerCase().endsWith(".html")) {
+                    File alt = new File(fileName.substring(0, fileName.length() - 1));
+                    if (alt.exists()) file = alt;
+                }
+            }
+
+            if (file.exists() && !file.isDirectory()) {
+                byte[] responseBytes = Files.readAllBytes(file.toPath());
+                exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                exchange.sendResponseHeaders(200, responseBytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(responseBytes);
+                }
+                System.out.println("✅ [200 OK] Phân phối file tĩnh: " + file.getName() + " (" + responseBytes.length + " bytes)");
+            } else {
+                // Nếu không tìm thấy file, trả về lỗi 404 Not Found theo chuẩn bài toán trong thêm.md
+                String errorMsg = "<h1>404 Not Found - Khong tim thay file " + escapeJson(fileName) + "</h1>";
+                byte[] errBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                exchange.sendResponseHeaders(404, errBytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(errBytes);
+                }
+                System.out.println("❌ [404 Not Found] Không tìm thấy file: " + fileName);
+            }
         }
     }
 
@@ -1384,6 +1424,15 @@ public class ChatAndWebServer {
                 "            <button class=\"btn-test\" onclick=\"testApi('GET', '/api/broadcast', null, true)\" style=\"border-color:#C62828; color:#C62828;\">🔴 Test 405 Method Not Allowed (GET vào /api/broadcast)</button>\n" +
                 "            <button class=\"btn-test\" onclick=\"testApi('POST', '/api/message', 'plain_text', false)\" style=\"border-color:#6A1B9A; color:#6A1B9A;\">🟣 Test 415 Media Type (Thiếu Header JSON)</button>\n" +
                 "            <button class=\"btn-test\" onclick=\"testApi('GET', '/api/khong-ton-tai', null, true)\" style=\"border-color:#757575; color:#757575;\">⚪ Test 404 Not Found (URL sai)</button>\n" +
+                "          </div>\n" +
+                "          <p style=\"font-size:13px; font-weight:bold; color:var(--primary-dark); margin-bottom:8px;\">\n" +
+                "            🔥 Kiểm thử Bài toán Test Chéo 4 Đường (Chương 12 &amp; thêm.md):\n" +
+                "          </p>\n" +
+                "          <div style=\"display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;\">\n" +
+                "            <a href=\"/P3.html\" target=\"_blank\" class=\"btn-test\" style=\"border-color:#2E7D32; color:#2E7D32; text-decoration:none; display:inline-flex; align-items:center; gap:5px;\">🔥 Đường 2: Mở P3.html (Java Server Port 8080)</a>\n" +
+                "            <a href=\"/P4.html\" target=\"_blank\" class=\"btn-test\" style=\"border-color:#2E7D32; color:#2E7D32; text-decoration:none; display:inline-flex; align-items:center; gap:5px;\">📄 Mở P4.html (Java Server Port 8080)</a>\n" +
+                "            <a href=\"http://localhost/P1.html\" target=\"_blank\" class=\"btn-test\" style=\"border-color:#1565C0; color:#1565C0; text-decoration:none; display:inline-flex; align-items:center; gap:5px;\">🔥 Đường 1: Mở P1.html (IIS Port 80)</a>\n" +
+                "            <button class=\"btn-test\" onclick=\"testApi('GET', '/P3.html', null, false)\" style=\"border-color:#2E7D32; color:#2E7D32;\">⚡ Fetch P3.html (Status 200)</button>\n" +
                 "          </div>\n" +
                 "          <div style=\"max-height:160px; overflow-y:auto; border:1px solid #EEE; border-radius:6px;\">\n" +
                 "            <table class=\"log-table\">\n" +

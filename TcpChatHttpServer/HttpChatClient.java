@@ -34,11 +34,14 @@ public class HttpChatClient {
         Scanner scanner = new Scanner(System.in);
         while (true) {
             System.out.println("\n----------------- MENU CHỨC NĂNG -----------------");
-            System.out.println("1. Xem danh sách client   (GET  /api/clients)");
-            System.out.println("2. Gửi tin nhắn           (POST /api/message)");
-            System.out.println("3. Xem lịch sử tin nhắn   (GET  /api/history)");
-            System.out.println("4. Thoát");
-            System.out.print("👉 Lựa chọn của bạn (1-4): ");
+            System.out.println("1. Xem danh sách client         (GET  /api/clients)");
+            System.out.println("2. Gửi tin nhắn                 (POST /api/message)");
+            System.out.println("3. Xem lịch sử tin nhắn         (GET  /api/history)");
+            System.out.println("4. [Test Chéo] Tải P3.html      (Đường 3: Java Server http://localhost:8080/P3.html)");
+            System.out.println("5. [Test Chéo] Tải P1.html      (Đường 4: IIS http://localhost/P1.html)");
+            System.out.println("6. [Test Chéo] Nhập URL tùy ý   (Tải trang HTML bất kỳ)");
+            System.out.println("7. Thoát");
+            System.out.print("👉 Lựa chọn của bạn (1-7): ");
 
             String choice = scanner.nextLine().trim();
 
@@ -60,15 +63,62 @@ public class HttpChatClient {
                         showHistory();
                         break;
                     case "4":
+                        fetchUrl(BASE_URL + "/P3.html");
+                        break;
+                    case "5":
+                        fetchUrl("http://localhost/P1.html");
+                        break;
+                    case "6":
+                        System.out.print("Nhập URL cần tải (ví dụ: http://localhost:8080/P4.html): ");
+                        String customUrl = scanner.nextLine().trim();
+                        if (!customUrl.isEmpty()) {
+                            fetchUrl(customUrl);
+                        }
+                        break;
+                    case "7":
                         System.out.println("👋 Tạm biệt! Đã thoát HTTP Chat Client.");
                         return;
                     default:
-                        System.out.println("⚠️ Lựa chọn không hợp lệ! Vui lòng chọn từ 1 đến 4.");
+                        System.out.println("⚠️ Lựa chọn không hợp lệ! Vui lòng chọn từ 1 đến 7.");
                 }
             } catch (Exception e) {
                 System.out.println("❌ [Lỗi HTTP]: " + e.getMessage());
-                System.out.println("👉 Vui lòng chắc chắn rằng Server (ChatAndWebServer) đang chạy tại port 8080!");
+                System.out.println("👉 Vui lòng chắc chắn rằng Server tương ứng đang hoạt động!");
             }
+        }
+    }
+
+    /**
+     * Tải nội dung HTML từ URL bất kỳ (Áp dụng bài toán Test Chéo 4 Đường)
+     */
+    static void fetchUrl(String urlString) {
+        try {
+            System.out.println("\nĐang gửi GET request tới: " + urlString + " ...");
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(urlString))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
+
+            long start = System.currentTimeMillis();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long elapsed = System.currentTimeMillis() - start;
+
+            int status = response.statusCode();
+            System.out.println("\n--- KẾT QUẢ TỪ SERVER (" + elapsed + " ms) ---");
+            System.out.println("Status Code : " + status + " " + getStatusText(status));
+            System.out.println("Content-Type: " + response.headers().firstValue("Content-Type").orElse("N/A"));
+            System.out.println("Nội dung HTML (Body):");
+            System.out.println(response.body());
+
+            if (status == 200) {
+                System.out.println("✅ Kiểm thử thành công với mã Status 200 OK!");
+            } else {
+                System.out.println("⚠️ Server phản hồi mã trạng thái: " + status);
+            }
+        } catch (Exception e) {
+            System.out.println("\n❌ Lỗi kết nối: " + e.getMessage());
+            System.out.println("👉 Vui lòng kiểm tra lại URL hoặc kiểm tra xem Server đã bật chưa.");
         }
     }
 

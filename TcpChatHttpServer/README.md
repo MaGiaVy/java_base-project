@@ -122,3 +122,26 @@ Chạy `open_web_chat.bat` hoặc truy cập `http://localhost:8080/chat`:
 ### Bước 5: Kiểm thử Desktop Client (TCP)
 Chạy `run_client.bat` (Giao diện Swing) hoặc `run_client_console.bat` (Console):
 - Chat đồng bộ xuyên suốt cả 3 kênh: TCP, HTTP REST API và UDP Multicast.
+
+---
+
+## 🧭 6. Kịch bản Kiểm Thử "Test Chéo 4 Đường" (Chuẩn theo thêm.md)
+
+| Đường Test | Bên Gửi (Client) | Bên Nhận (Server) | URL Kiểm thử | Kết quả kỳ vọng |
+|---|---|---|---|---|
+| **Đường 1** | Trình duyệt (Chrome / Firefox) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | **Status 200 OK**, hiển thị nội dung `P1.html` từ IIS |
+| **Đường 2** | Trình duyệt (Chrome / Firefox) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | **Status 200 OK**, hiển thị nội dung `P3.html` từ Java Server |
+| **Đường 3** | Java Client (`HttpChatClient` / `MyHttpClient`) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | Console in ra **Status 200 OK** và mã HTML của `P3.html` |
+| **Đường 4** | Java Client (`HttpChatClient` / `MyHttpClient`) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | Console in ra **Status 200 OK** và mã HTML của `P1.html` từ IIS |
+
+*(Lưu ý: Hệ thống hỗ trợ linh hoạt cả 2 định dạng đuôi `.html` và `.htm`).*
+
+### Các bước thực hiện nhanh:
+1. **Chuẩn bị file cho IIS:** Chạy file `copy_to_iis.bat` để tự động copy `P1.html` và `P2.html` vào thư mục `C:\inetpub\wwwroot`.
+2. **Khởi động Java Server:** Chạy `run_server.bat` (hoặc `java MyHttpServer`).
+3. **Thực hiện Test chéo:**
+   - **Đường 1:** Mở Chrome/Firefox truy cập `http://localhost/P1.html`.
+   - **Đường 2:** Mở Chrome/Firefox truy cập `http://localhost:8080/P3.html`.
+   - **Đường 3:** Chạy `run_http_client.bat`, chọn phím `4` (hoặc chạy `java MyHttpClient` nhập `http://localhost:8080/P3.html`).
+   - **Đường 4:** Chạy `run_http_client.bat`, chọn phím `5` (hoặc chạy `java MyHttpClient` nhập `http://localhost/P1.html`).
+
