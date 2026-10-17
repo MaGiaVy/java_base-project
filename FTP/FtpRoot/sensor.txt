@@ -1,0 +1,2 @@
+Time: 10:25:00 | Temp: 28.5C | Humidity: 70%
+Time: 10:26:00 | Temp: 28.7C | Humidity: 69%

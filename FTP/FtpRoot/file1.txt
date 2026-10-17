@@ -1,0 +1,2 @@
+Xin chào! Đây là nội dung tập tin mẫu file1.txt trên FTP Server.
+Môn học: Lập trình mạng với Java - Trường Đại học Sài Gòn (SGU).

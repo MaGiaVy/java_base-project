@@ -1,0 +1,1 @@
+Tập tin nằm trong thư mục /data dùng để kiểm thử lệnh CWD /data và CDUP.
