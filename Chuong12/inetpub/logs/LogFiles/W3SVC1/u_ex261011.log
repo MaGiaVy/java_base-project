@@ -1,0 +1,26 @@
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-11 09:36:02
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-11 09:36:02 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT;+Windows+NT+10.0;+en-US)+WindowsPowerShell/5.1.26100.9549 - 200 0 0 1329 161 791
+2026-10-11 09:43:21 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1329 196 2
+2026-10-11 09:43:51 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 - 200 0 0 1329 729 1
+2026-10-11 09:43:51 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 http://localhost/P1.html 404 0 2 5019 650 18
+2026-10-11 09:45:35 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1329 196 20
+2026-10-11 09:51:04 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 - 200 0 0 1329 753 13
+2026-10-11 09:51:04 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P1.html 404 0 2 5019 674 2
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-11 09:55:10
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-11 09:55:10 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1329 196 4
+2026-10-11 10:01:02 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P1.html 404 0 2 5019 674 9
+2026-10-11 10:01:02 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P1.html 404 0 2 5019 674 2
+2026-10-11 10:01:26 ::1 GET /P2.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 - 200 0 0 838 753 280
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-11 12:56:33
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-11 12:56:33 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P2.html 404 0 2 5019 674 758
+2026-10-11 12:56:33 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P1.html 404 0 2 5019 674 0
+2026-10-11 12:56:33 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/P1.html 404 0 2 5019 674 0

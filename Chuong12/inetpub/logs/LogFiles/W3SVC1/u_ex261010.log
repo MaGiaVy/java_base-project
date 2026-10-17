@@ -1,0 +1,19 @@
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-10 07:02:36
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-10 07:02:36 ::1 GET / - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 - 200 0 0 920 1071 2323
+2026-10-10 07:02:36 ::1 GET /iisstart.png - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 http://localhost/ 200 0 0 98983 993 46
+2026-10-10 07:02:36 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 http://localhost/ 404 0 2 5019 992 9
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-10 07:40:32
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-10 07:40:32 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/154.0.0.0+Safari/537.36 - 200 0 0 1329 1078 349
+2026-10-10 07:45:13 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1329 196 12
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-10 14:10:59
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-10 14:10:59 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT;+Windows+NT+10.0;+en-US)+WindowsPowerShell/5.1.26100.9549 - 200 0 0 1329 161 378
+2026-10-10 14:11:08 ::1 GET /P1.HTM - 80 - ::1 Mozilla/5.0+(Windows+NT;+Windows+NT+10.0;+en-US)+WindowsPowerShell/5.1.26100.9549 - 200 0 0 1328 160 32

@@ -8,6 +8,9 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Giao diện đồ họa Quản lý Server (Dashboard GUI) theo tông màu Đỏ - Trắng
@@ -33,7 +36,7 @@ public class ServerDashboardGUI extends JFrame {
 
     public ServerDashboardGUI() {
         setTitle("Bảng Điều Khiển HTTP Server - Đại học Sài Gòn (Chương 12)");
-        setSize(880, 640);
+        setSize(960, 640);
         setMinimumSize(new Dimension(780, 520));
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -154,6 +157,16 @@ public class ServerDashboardGUI extends JFrame {
             if (server2.isRunning()) toggleServer2();
         });
 
+        StyledButton btnCreatePage = new StyledButton("➕ Tạo Trang Mới", new Color(13, 148, 136), Color.WHITE);
+        btnCreatePage.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnCreatePage.setToolTipText("Tạo trang HTML mới lưu vào webroot1 và tự động đồng bộ sang Windows IIS");
+        btnCreatePage.addActionListener(e -> showCreatePageDialog());
+
+        StyledButton btnSyncIis = new StyledButton("🔄 Đồng Bộ Sang IIS", new Color(79, 70, 229), Color.WHITE);
+        btnSyncIis.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnSyncIis.setToolTipText("Đồng bộ toàn bộ file từ webroot1 sang C:\\inetpub\\wwwroot của IIS");
+        btnSyncIis.addActionListener(e -> syncAllToIis());
+
         StyledButton btnClearLog = new StyledButton("Xóa Log", Color.WHITE, TEXT_MAIN);
         btnClearLog.setFont(new Font("Segoe UI", Font.BOLD, 11));
         btnClearLog.addActionListener(e -> txtLogs.setText(""));
@@ -173,6 +186,8 @@ public class ServerDashboardGUI extends JFrame {
 
         logButtons.add(btnStartAll);
         logButtons.add(btnStopAll);
+        logButtons.add(btnCreatePage);
+        logButtons.add(btnSyncIis);
         logButtons.add(btnOpenCrawled);
         logButtons.add(btnClearLog);
 
@@ -350,6 +365,201 @@ public class ServerDashboardGUI extends JFrame {
             return true;
         }
         return result[0];
+    }
+
+    private void showCreatePageDialog() {
+        JDialog dialog = new JDialog(this, "➕ Tạo Trang Web Mới & Đồng Bộ Sang IIS", true);
+        dialog.setSize(600, 520);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel panel = new JPanel(new BorderLayout(12, 12));
+        panel.setBorder(new EmptyBorder(16, 16, 16, 16));
+        panel.setBackground(Color.WHITE);
+
+        // Header
+        JLabel lblHeader = new JLabel("Tạo Trang Web Mới (Lưu Vào webroot1 & IIS)");
+        lblHeader.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        lblHeader.setForeground(PRIMARY_RED);
+
+        // Fields
+        JPanel fieldsPanel = new JPanel(new GridLayout(2, 2, 8, 8));
+        fieldsPanel.setOpaque(false);
+
+        JLabel lblName = new JLabel("Tên tệp (vd: P6.HTM, P7.HTM, about.html):");
+        lblName.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        JTextField txtName = new JTextField("P6.HTM");
+
+        JLabel lblTitle = new JLabel("Tiêu đề trang (Title):");
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        JTextField txtTitle = new JTextField("Trang Web Mới P6");
+
+        fieldsPanel.add(lblName);
+        fieldsPanel.add(txtName);
+        fieldsPanel.add(lblTitle);
+        fieldsPanel.add(txtTitle);
+
+        JPanel contentPanel = new JPanel(new BorderLayout(6, 6));
+        contentPanel.setOpaque(false);
+        JLabel lblBody = new JLabel("Nội dung HTML (mã nguồn hoàn chỉnh):");
+        lblBody.setFont(new Font("Segoe UI", Font.BOLD, 12));
+
+        String defaultHtml = "<!DOCTYPE html>\n" +
+                "<html lang=\"vi\">\n" +
+                "<head>\n" +
+                "    <meta charset=\"UTF-8\">\n" +
+                "    <title>Trang Web P6</title>\n" +
+                "    <style>\n" +
+                "        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8fafc; padding: 40px; color: #0f172a; }\n" +
+                "        .card { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }\n" +
+                "        h1 { color: #dc2626; margin-top: 0; }\n" +
+                "        p { font-size: 15px; line-height: 1.6; }\n" +
+                "    </style>\n" +
+                "</head>\n" +
+                "<body>\n" +
+                "    <div class=\"card\">\n" +
+                "        <h1>Chào Mừng Đến Với Trang Web Mới!</h1>\n" +
+                "        <p>Trang này được tạo trực tiếp từ <b>Server Dashboard</b> của hệ thống mạng phân tán.</p>\n" +
+                "        <p>Trang đã được lưu đồng thời tại Java Server (Port 8080) và Microsoft IIS (Port 80).</p>\n" +
+                "    </div>\n" +
+                "</body>\n" +
+                "</html>";
+
+        JTextArea txtContent = new JTextArea(defaultHtml);
+        txtContent.setFont(new Font("Consolas", Font.PLAIN, 12));
+        txtContent.setMargin(new Insets(8, 8, 8, 8));
+        JScrollPane scroll = new JScrollPane(txtContent);
+
+        contentPanel.add(lblBody, BorderLayout.NORTH);
+        contentPanel.add(scroll, BorderLayout.CENTER);
+
+        JPanel topSection = new JPanel(new BorderLayout(10, 10));
+        topSection.setOpaque(false);
+        topSection.add(lblHeader, BorderLayout.NORTH);
+        topSection.add(fieldsPanel, BorderLayout.CENTER);
+
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        btnPanel.setOpaque(false);
+
+        StyledButton btnSave = new StyledButton("💾 Lưu & Đồng Bộ IIS", new Color(22, 163, 74), Color.WHITE);
+        btnSave.addActionListener(e -> {
+            String filename = txtName.getText().trim();
+            if (filename.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Vui lòng nhập tên tệp!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            if (!filename.toLowerCase().endsWith(".htm") && !filename.toLowerCase().endsWith(".html")) {
+                filename += ".htm";
+            }
+
+            String content = txtContent.getText();
+            try {
+                // 1. Lưu vào webroot1
+                File webroot1 = new File("webroot1");
+                if (!webroot1.exists()) webroot1.mkdirs();
+                File target = new File(webroot1, filename);
+                Files.writeString(target.toPath(), content, StandardCharsets.UTF_8);
+
+                // 2. Lưu vào IIS nếu có
+                File iisDir = HttpServerCore.getActiveIisDir();
+                boolean iisSuccess = false;
+                if (iisDir != null && iisDir.exists()) {
+                    try {
+                        File iisTarget = new File(iisDir, filename);
+                        Files.writeString(iisTarget.toPath(), content, StandardCharsets.UTF_8);
+                        iisSuccess = true;
+                    } catch (Exception ex) {
+                        appendLog("[LƯU Ý IIS] Chưa thể ghi vào " + iisDir.getAbsolutePath() + ": " + ex.getMessage());
+                    }
+                }
+
+                appendLog(String.format("[TẠO TRANG] Đã tạo thành công trang '%s' tại webroot1%s",
+                        filename, (iisSuccess ? " và đồng bộ sang IIS (" + iisDir.getAbsolutePath() + ")" : "")));
+
+                String msg = "Đã tạo thành công trang: " + filename + "\n- Lưu tại: webroot1/" + filename;
+                if (iisSuccess) {
+                    msg += "\n- Đồng bộ sang IIS: " + iisDir.getAbsolutePath() + "\\" + filename + "\n\n👉 Bạn hãy mở IIS Manager (inetmgr), chọn Default Web Site và nhấn F5 để thấy ngay!";
+                } else {
+                    msg += "\n\n(Lưu ý: Nếu chưa thấy trên IIS, hãy chạy 'sync_to_iis.bat' để cấp quyền và đồng bộ toàn bộ file sang IIS)";
+                }
+                JOptionPane.showMessageDialog(dialog, msg, "Tạo Trang Thành Công", JOptionPane.INFORMATION_MESSAGE);
+                dialog.dispose();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog, "Lỗi khi lưu file: " + ex.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        StyledButton btnCancel = new StyledButton("Đóng", Color.WHITE, TEXT_MAIN);
+        btnCancel.addActionListener(e -> dialog.dispose());
+
+        btnPanel.add(btnSave);
+        btnPanel.add(btnCancel);
+
+        panel.add(topSection, BorderLayout.NORTH);
+        panel.add(contentPanel, BorderLayout.CENTER);
+        panel.add(btnPanel, BorderLayout.SOUTH);
+
+        dialog.setContentPane(panel);
+        dialog.setVisible(true);
+    }
+
+    private void syncAllToIis() {
+        File iisDir = HttpServerCore.getActiveIisDir();
+        if (iisDir == null || !iisDir.exists()) {
+            JOptionPane.showMessageDialog(this,
+                    "Không tìm thấy thư mục IIS trên máy này (đã kiểm tra C:\\inetpub\\wwwroot và C:\\inetpub\\site1).\nVui lòng kiểm tra lại cấu hình IIS.",
+                    "Không tìm thấy IIS", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        File webroot1 = new File("webroot1");
+        if (!webroot1.exists()) {
+            JOptionPane.showMessageDialog(this, "Thư mục webroot1 không tồn tại!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        appendLog("[ĐỒNG BỘ IIS] Đang đồng bộ toàn bộ webroot1 sang " + iisDir.getAbsolutePath() + "...");
+
+        try {
+            int copied = copyDirectoryRecursive(webroot1, iisDir);
+            appendLog(String.format("[ĐỒNG BỘ IIS] Đã sao chép thành công %,d tệp/thư mục sang %s", copied, iisDir.getAbsolutePath()));
+            JOptionPane.showMessageDialog(this,
+                    "Đồng bộ thành công " + copied + " tệp/thư mục sang IIS!\n" +
+                    "Đích: " + iisDir.getAbsolutePath() + "\n\n" +
+                    "👉 Hãy mở IIS Manager (inetmgr), chọn Default Web Site và bấm F5 để xem kết quả!",
+                    "Đồng Bộ IIS Hoàn Tất", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            appendLog("[LỖI ĐỒNG BỘ IIS] " + ex.getMessage());
+            int opt = JOptionPane.showConfirmDialog(this,
+                    "Không thể ghi trực tiếp vào " + iisDir.getAbsolutePath() + " do quyền bảo mật của Windows:\n" +
+                    ex.getMessage() + "\n\n" +
+                    "Bạn có muốn mở file 'sync_to_iis.bat' để tự động cấp quyền và đồng bộ ngay không?",
+                    "Cần Quyền Administrator", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (opt == JOptionPane.YES_OPTION) {
+                try {
+                    File bat = new File("sync_to_iis.bat");
+                    if (bat.exists()) Desktop.getDesktop().open(bat);
+                } catch (Exception openEx) {
+                    appendLog("[LỖI] Không thể mở sync_to_iis.bat: " + openEx.getMessage());
+                }
+            }
+        }
+    }
+
+    private int copyDirectoryRecursive(File source, File target) throws java.io.IOException {
+        int count = 0;
+        if (source.isDirectory()) {
+            if (!target.exists()) target.mkdirs();
+            File[] files = source.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    count += copyDirectoryRecursive(file, new File(target, file.getName()));
+                }
+            }
+        } else {
+            Files.copy(source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            count++;
+        }
+        return count;
     }
 
     /**

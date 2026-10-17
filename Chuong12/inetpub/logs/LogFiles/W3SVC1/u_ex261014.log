@@ -1,0 +1,20 @@
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-14 00:58:30
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-14 00:58:30 ::1 GET /index.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 - 200 0 0 27300 756 766
+2026-10-14 00:58:32 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 7
+2026-10-14 01:00:22 ::1 GET /P1.html - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 200 0 0 3615 694 141
+2026-10-14 01:02:21 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 3615 196 0
+2026-10-14 01:02:30 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 3615 196 18
+2026-10-14 01:02:33 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 3615 196 0
+2026-10-14 01:02:39 127.0.0.1 GET /P2.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1877 196 56
+2026-10-14 01:02:45 127.0.0.1 GET /P2.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1877 196 2
+2026-10-14 01:02:54 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 3615 196 0
+2026-10-14 01:02:58 127.0.0.1 GET /P2.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 1877 196 2
+2026-10-14 01:03:04 127.0.0.1 GET /P1.html - 80 - 127.0.0.1 Java-http-client/24.0.2 - 200 0 0 3615 196 4
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-14 02:53:33
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-14 02:53:33 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 314

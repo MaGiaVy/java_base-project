@@ -1,0 +1,16 @@
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-15 01:46:12
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-15 01:46:12 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 701
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-15 07:18:40
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-15 07:18:40 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 1047
+2026-10-15 07:19:29 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 26
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2026-10-15 09:29:36
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status sc-bytes cs-bytes time-taken
+2026-10-15 09:29:36 ::1 GET /favicon.ico - 80 - ::1 Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)+AppleWebKit/537.36+(KHTML,+like+Gecko)+Chrome/155.0.0.0+Safari/537.36+Edg/155.0.0.0 http://localhost/index.html 404 0 2 5019 677 285

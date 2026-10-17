@@ -302,13 +302,24 @@ public class HttpServerCore {
                 // Đồng bộ sang IIS nếu có yêu cầu
                 boolean iisSynced = false;
                 if (syncIis) {
-                    String iisPath = (port == 8080) ? "C:\\inetpub\\site1" : "C:\\inetpub\\site2";
-                    File iisDir = new File(iisPath);
-                    if (iisDir.exists() && iisDir.isDirectory()) {
-                        File iisDest = new File(iisDir, filename);
-                        Files.copy(targetFile.toPath(), iisDest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        iisSynced = true;
-                        log(String.format("[%s] Đã đồng bộ trang cào sang IIS: %s", serverName, iisDest.getAbsolutePath()));
+                    try {
+                        File iisDir = getActiveIisDir();
+                        if (iisDir != null && iisDir.exists() && iisDir.isDirectory()) {
+                            // 1. Lưu vào thư mục crawled/ của IIS
+                            File iisCrawledDir = new File(iisDir, "crawled");
+                            if (!iisCrawledDir.exists()) iisCrawledDir.mkdirs();
+                            File iisDest = new File(iisCrawledDir, filename);
+                            Files.copy(targetFile.toPath(), iisDest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+                            // 2. Lưu thêm 1 bản trực tiếp tại gốc thư mục IIS
+                            File iisRootDest = new File(iisDir, filename);
+                            Files.copy(targetFile.toPath(), iisRootDest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+                            iisSynced = true;
+                            log(String.format("[%s] Đã đồng bộ trang cào sang IIS (%s): %s", serverName, iisDir.getName(), iisDest.getAbsolutePath()));
+                        }
+                    } catch (Exception ex) {
+                        log(String.format("[%s] [LƯU Ý IIS] Chưa thể ghi vào thư mục IIS: %s. Chạy 'cap_quyen_iis.bat' để cấp quyền ghi.", serverName, ex.getMessage()));
                     }
                 }
 
@@ -409,5 +420,23 @@ public class HttpServerCore {
             else sb.append(c);
         }
         return sb.toString();
+    }
+
+    /**
+     * Tự động phát hiện thư mục IIS đang hoạt động trên hệ thống
+     */
+    public static File getActiveIisDir() {
+        File[] candidates = new File[] {
+                new File("inetpub/wwwroot"),
+                new File("C:\\inetpub\\wwwroot"),
+                new File("C:\\inetpub\\site1"),
+                new File("C:\\inetpub\\site2")
+        };
+        for (File dir : candidates) {
+            if (dir.exists() && dir.isDirectory()) {
+                return dir;
+            }
+        }
+        return null;
     }
 }

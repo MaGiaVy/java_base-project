@@ -362,8 +362,9 @@ public class MiniChromeBrowser extends JFrame {
 
         // Checkbox Đồng bộ IIS
         gbc.gridx = 1; gbc.gridy = 3; gbc.weightx = 0.75;
-        JCheckBox chkSyncIis = new JCheckBox("Đồng bộ trang sang Windows IIS (C:\\inetpub\\site1)");
+        JCheckBox chkSyncIis = new JCheckBox("Đồng bộ trang sang Windows IIS (C:\\inetpub\\wwwroot)");
         chkSyncIis.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        chkSyncIis.setSelected(true);
         chkSyncIis.setOpaque(false);
         form.add(chkSyncIis, gbc);
 
