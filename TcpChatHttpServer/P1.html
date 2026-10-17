@@ -1,24 +1,85 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html>
 <head>
   <meta charset="UTF-8">
   <title>P1 - Microsoft IIS</title>
-  <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #E3F2FD; padding: 40px; color: #0D47A1; }
-    .card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-left: 6px solid #1565C0; }
-    h1 { margin-top: 0; color: #1565C0; }
-    .badge { background: #1565C0; color: white; padding: 4px 10px; border-radius: 15px; font-size: 13px; font-weight: bold; }
-  </style>
 </head>
-<body>
-  <div class="card">
-    <span class="badge">MICROSOFT IIS WEB SERVER (PORT 80)</span>
-    <h1>Day la P1 tu IIS</h1>
-    <p><b>Xác nhận kết quả:</b> Bạn đã truy cập thành công file <code>P1.html</code> phân phối từ Microsoft IIS trên cổng 80!</p>
-    <ul>
-      <li>🔥 <b>Đường 1 (Firefox / Chrome &lt;-&gt; IIS):</b> Thành công với Status <code>200 OK</code>!</li>
-      <li>🔥 <b>Đường 4 (Java Client &lt;-&gt; IIS):</b> Thành công với Status <code>200 OK</code>!</li>
-    </ul>
-  </div>
+<body bgcolor="#E3F2FD" text="#0D47A1" style="font-family: Arial, sans-serif; padding: 20px;">
+  <table width="100%" border="0" cellpadding="20" cellspacing="0" bgcolor="#FFFFFF" style="border: 2px solid #1565C0;">
+    <tr>
+      <td>
+        <!-- Top Navigation -->
+        <table width="100%" border="0" cellpadding="8" cellspacing="0" bgcolor="#1565C0">
+          <tr>
+            <td>
+              <font color="#FFFFFF" size="3"><b>[SERVER 1] MICROSOFT IIS (PORT 80) &bull; TỆP TIN: P1.html</b></font>
+            </td>
+            <td align="right">
+              <font color="#FFFFFF">
+                <a href="index.html" style="color:#FFF9C4; font-weight:bold; text-decoration:none;">🏠 Trang Chủ Web Portal</a>
+              </font>
+            </td>
+          </tr>
+        </table>
+        
+        <br>
+        <h1 style="color: #1565C0;">Day la trang P1 tu Microsoft IIS</h1>
+        <p><font size="3">Xác nhận kết quả: Bạn đã kết nối và tải thành công file <b>P1.html</b> từ web server <b>Microsoft IIS</b> trên cổng mặc định <b>80</b>!</font></p>
+        
+        <hr color="#90CAF9">
+        
+        <h3>MA TRẬN KIỂM THỬ CHÉO 4 ĐƯỜNG CỦA THẦY:</h3>
+        <table width="100%" border="1" cellpadding="8" cellspacing="0" bordercolor="#BBDEFB">
+          <tr bgcolor="#E3F2FD">
+            <th>Đường</th>
+            <th>Client</th>
+            <th>Server</th>
+            <th>URL kiểm tra</th>
+            <th>Trạng thái tại trang này</th>
+          </tr>
+          <tr bgcolor="#FFF9C4">
+            <td><b>Đường 1</b></td>
+            <td>Trình duyệt chuẩn (Chrome / Firefox / Edge)</td>
+            <td>Microsoft IIS (Port 80)</td>
+            <td>http://localhost/P1.html</td>
+            <td><b>&lt;-- ĐANG HIỂN THỊ NẾU MỞ BẰNG CHROME / FIREFOX</b></td>
+          </tr>
+          <tr>
+            <td><b>Đường 2</b></td>
+            <td>Trình duyệt chuẩn (Chrome / Firefox / Edge)</td>
+            <td>Java Server (Port 8080)</td>
+            <td>http://localhost:8080/P3.html</td>
+            <td>Xem tại Java Server</td>
+          </tr>
+          <tr>
+            <td><b>Đường 3</b></td>
+            <td>MiniBrowser (Client tự code)</td>
+            <td>Java Server (Port 8080)</td>
+            <td>http://localhost:8080/P3.html</td>
+            <td>Xem tại Java Server</td>
+          </tr>
+          <tr bgcolor="#FFF9C4">
+            <td><b>Đường 4</b></td>
+            <td>MiniBrowser (Client tự code)</td>
+            <td>Microsoft IIS (Port 80)</td>
+            <td>http://localhost/P1.html</td>
+            <td><b>&lt;-- ĐANG HIỂN THỊ NẾU MỞ BẰNG MINIBROWSER</b></td>
+          </tr>
+        </table>
+        
+        <br>
+        <table width="100%" border="0" cellpadding="10" cellspacing="0" bgcolor="#E8EAF6">
+          <tr>
+            <td>
+              <b>Kiểm tra Hyperlink (Chuyển trang):</b><br>
+              <font size="4"><a href="P2.html">&gt;&gt;&gt; Bấm vào đây để sang trang P2 (P2.html) &lt;&lt;&lt;</a></font>
+              &nbsp;&nbsp;|&nbsp;&nbsp;
+              <a href="index.html">Quay về Web Portal</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>

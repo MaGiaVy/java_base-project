@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Application Services - Server 2 (App)</title>
+</head>
+<body style="background-color: #F8FAFC; color: #0F172A; font-family: Segoe UI, Arial, sans-serif; padding: 20px;">
+
+    <!-- Top App Header -->
+    <table width="100%" cellpadding="16" cellspacing="0" style="background-color: #991B1B; border-radius: 8px;">
+        <tr>
+            <td>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="left">
+                            <h1 style="margin: 0; font-size: 20px; font-weight: bold;">
+                                <font color="#FFFFFF">MÁY CHỦ ỨNG DỤNG (SERVER 2)</font>
+                            </h1>
+                            <p style="margin: 4px 0 0 0; font-size: 12px;">
+                                <font color="#FEE2E2">Dịch Vụ Mạng Phân Tán • Độc Lập Với Web Server IIS</font>
+                            </p>
+                        </td>
+                        <td align="right" valign="middle">
+                            <span style="background-color: #7F1D1D; padding: 6px 12px; border-radius: 4px; font-size: 11px;">
+                                <font color="#FFFFFF"><b>NODE 2: PORT 8081</b></font>
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Main Content Card -->
+    <table width="100%" cellpadding="22" cellspacing="0" style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; margin-top: 16px;">
+        <tr>
+            <td>
+                <!-- Subtitle / Meta -->
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td align="left">
+                            <span style="background-color: #FEE2E2; border: 1px solid #FECACA; padding: 4px 10px; border-radius: 4px; font-size: 12px;">
+                                <font color="#991B1B"><b>TÀI NGUYÊN: P3.HTM</b></font>
+                            </span>
+                        </td>
+                        <td align="right">
+                            <font color="#64748B" size="2">Phục vụ bởi Server 2 (App Server)</font>
+                        </td>
+                    </tr>
+                </table>
+
+                <h2 style="color: #0F172A; font-size: 20px; margin: 16px 0 8px 0;">
+                    Cổng Dịch Vụ Mạng Đa Nền Tảng (Server 2)
+                </h2>
+                
+                <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
+                    Bạn đang kết nối thành công tới <b>Server 2 (Cổng 8081)</b>. Theo sơ đồ trên bảng của Thầy, đây là máy chủ thứ hai hoạt động độc lập, quản lý và phục vụ nhóm tài nguyên <code>P3.HTM</code> và <code>P4.HTM</code>.
+                </p>
+
+                <!-- Technical Specification Table -->
+                <table width="100%" cellpadding="10" cellspacing="0" style="border-collapse: collapse; border: 1px solid #E2E8F0; margin-top: 12px;">
+                    <tr style="background-color: #F8FAFC;">
+                        <th align="left" width="35%" style="border: 1px solid #E2E8F0; padding: 10px 14px;">
+                            <font color="#334155" size="2"><b>THÔNG SỐ MÁY CHỦ</b></font>
+                        </th>
+                        <th align="left" style="border: 1px solid #E2E8F0; padding: 10px 14px;">
+                            <font color="#334155" size="2"><b>TRẠNG THÁI VẬN HÀNH</b></font>
+                        </th>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #64748B;">Cổng lắng nghe (Port):</td>
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #0F172A;">
+                            <b>TCP Port 8081</b> (Phân tách hoàn toàn với Port 8080)
+                        </td>
+                    </tr>
+                    <tr style="background-color: #F8FAFC;">
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #64748B;">Thư mục tài nguyên:</td>
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #0F172A;">
+                            <code>webroot2/</code> (Chỉ chứa P3.HTM và P4.HTM)
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #64748B;">Dịch vụ hỗ trợ:</td>
+                        <td style="border: 1px solid #E2E8F0; padding: 10px 14px; color: #0F172A;">
+                            Phục vụ Static Web, API thời gian (<code>/api/time</code>) & API Tin nhắn (<code>/api/message</code>)
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- Action / Navigation Buttons -->
+                <div style="margin-top: 24px;">
+                    <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: bold; color: #334155;">
+                        ĐIỀU HƯỚNG LIÊN MÁY CHỦ:
+                    </p>
+                    <table cellpadding="0" cellspacing="0">
+                        <tr>
+                            <td style="padding-right: 12px;">
+                                <a href="http://localhost:8081/P4.HTM" style="text-decoration: none;">
+                                    <table cellpadding="10" cellspacing="0" style="background-color: #991B1B; border-radius: 6px;">
+                                        <tr>
+                                            <td align="center" style="padding: 9px 18px;">
+                                                <font color="#FFFFFF"><b>&rarr; Chuyển Sang P4.HTM (Cùng Server 2)</b></font>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </a>
+                            </td>
+                            <td>
+                                <a href="http://localhost:8080/P1.HTM" style="text-decoration: none;">
+                                    <table cellpadding="10" cellspacing="0" style="background-color: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px;">
+                                        <tr>
+                                            <td align="center" style="padding: 8px 18px;">
+                                                <font color="#0F172A"><b>&lArr; Quay Về P1.HTM (Server 1: 8080)</b></font>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </a>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+            </td>
+        </tr>
+    </table>
+
+    <!-- Footer Meta -->
+    <table width="100%" cellpadding="12" cellspacing="0" style="margin-top: 12px; text-align: center;">
+        <tr>
+            <td>
+                <font color="#94A3B8" size="2">
+                    Trình duyệt Mini Chrome • Đang duyệt tại: <code>http://localhost:8081/P3.HTM</code>
+                </font>
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>

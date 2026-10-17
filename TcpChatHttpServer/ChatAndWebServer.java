@@ -492,8 +492,25 @@ public class ChatAndWebServer {
 
             String path = exchange.getRequestURI().getPath();
 
-            // 1. Nếu là trang chủ "/" -> Hiển thị Web Admin Dashboard
-            if ("/".equals(path)) {
+            // 1. Nếu là trang chủ "/" hoặc "/index.html" -> Ưu tiên phục vụ Web Portal index.html
+            if ("/".equals(path) || "/index.html".equalsIgnoreCase(path)) {
+                File indexFile = new File("index.html");
+                if (indexFile.exists() && !indexFile.isDirectory()) {
+                    byte[] responseBytes = Files.readAllBytes(indexFile.toPath());
+                    exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+                    exchange.sendResponseHeaders(200, responseBytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(responseBytes);
+                    }
+                    System.out.println("✅ [200 OK] Phân phối Web Portal index.html (" + responseBytes.length + " bytes)");
+                    return;
+                }
+                sendHtmlResponse(exchange, 200, renderAdminDashboardHtml());
+                return;
+            }
+
+            // Hỗ trợ truy cập riêng trang Admin Dashboard chi tiết
+            if ("/admin".equalsIgnoreCase(path)) {
                 sendHtmlResponse(exchange, 200, renderAdminDashboardHtml());
                 return;
             }

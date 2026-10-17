@@ -125,23 +125,35 @@ Chạy `run_client.bat` (Giao diện Swing) hoặc `run_client_console.bat` (Con
 
 ---
 
-## 🧭 6. Kịch bản Kiểm Thử "Test Chéo 4 Đường" (Chuẩn theo thêm.md)
+## 🧭 6. Kịch bản Kiểm Thử "Test Chéo 4 Đường" (Chuẩn theo thêm.md & MiniBrowser)
+
+Hệ thống cung cấp ma trận kiểm thử chéo 4 đường hoàn chỉnh giữa 2 Web Client (Trình duyệt chuẩn và MiniBrowser Java Swing) và 2 Web Server (Microsoft IIS cổng 80 và Java Server cổng 8080):
 
 | Đường Test | Bên Gửi (Client) | Bên Nhận (Server) | URL Kiểm thử | Kết quả kỳ vọng |
 |---|---|---|---|---|
-| **Đường 1** | Trình duyệt (Chrome / Firefox) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | **Status 200 OK**, hiển thị nội dung `P1.html` từ IIS |
-| **Đường 2** | Trình duyệt (Chrome / Firefox) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | **Status 200 OK**, hiển thị nội dung `P3.html` từ Java Server |
-| **Đường 3** | Java Client (`HttpChatClient` / `MyHttpClient`) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | Console in ra **Status 200 OK** và mã HTML của `P3.html` |
-| **Đường 4** | Java Client (`HttpChatClient` / `MyHttpClient`) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | Console in ra **Status 200 OK** và mã HTML của `P1.html` từ IIS |
+| **Đường 1** | Trình duyệt chuẩn (Chrome / Firefox / Edge) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | **Status 200 OK**, hiển thị trang `P1.html` từ IIS |
+| **Đường 2** | Trình duyệt chuẩn (Chrome / Firefox / Edge) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | **Status 200 OK**, hiển thị trang `P3.html` từ Java Server |
+| **Đường 3** | MiniBrowser (`MiniBrowser.java` Swing) | Java Server (Port 8080) | `http://localhost:8080/P3.html` | **Status 200 OK**, MiniBrowser hiển thị nội dung `P3.html` |
+| **Đường 4** | MiniBrowser (`MiniBrowser.java` Swing) | Microsoft IIS (Port 80) | `http://localhost/P1.html` | **Status 200 OK**, MiniBrowser hiển thị nội dung `P1.html` từ IIS |
 
-*(Lưu ý: Hệ thống hỗ trợ linh hoạt cả 2 định dạng đuôi `.html` và `.htm`).*
+*(Lưu ý: Hệ thống hỗ trợ linh hoạt cả 2 định dạng đuôi `.html` và `.htm`, đồng thời hỗ trợ chuyển trang qua Hyperlink P1 <-> P2 và P3 <-> P4).*
 
-### Các bước thực hiện nhanh:
-1. **Chuẩn bị file cho IIS:** Chạy file `copy_to_iis.bat` để tự động copy `P1.html` và `P2.html` vào thư mục `C:\inetpub\wwwroot`.
-2. **Khởi động Java Server:** Chạy `run_server.bat` (hoặc `java MyHttpServer`).
+### 🚀 Cách 1: Chạy tự động 1-Click để biểu diễn cho Thầy xem
+1. Chạy `copy_to_iis.bat` một lần (chọn Yes khi Windows hỏi quyền Admin) để copy `P1.html`, `P2.html` vào IIS `C:\inetpub\wwwroot`.
+2. Chạy file **`test_cheo_4_duong.bat`**:
+   - Tự động bật **Java Server** (Port 8080).
+   - Tự động bật **Trình duyệt chuẩn** mở 2 tab cho **Đường 1** và **Đường 2**.
+   - Tự động bật **MiniBrowser** cho **Đường 3** và **Đường 4**.
+   - Thầy giáo sẽ thấy ngay lập tức cả 4 đường chéo hoạt động trực quan song song trên màn hình!
+
+### 🛠️ Cách 2: Kiểm thử thủ công từng bước
+1. **Server IIS:** Đảm bảo IIS đã chạy (Port 80) và đã có `P1.html`, `P2.html` trong `C:\inetpub\wwwroot`.
+2. **Server Java:** Chạy `run_server.bat` (hoặc `java MyHttpServer`).
 3. **Thực hiện Test chéo:**
-   - **Đường 1:** Mở Chrome/Firefox truy cập `http://localhost/P1.html`.
-   - **Đường 2:** Mở Chrome/Firefox truy cập `http://localhost:8080/P3.html`.
-   - **Đường 3:** Chạy `run_http_client.bat`, chọn phím `4` (hoặc chạy `java MyHttpClient` nhập `http://localhost:8080/P3.html`).
-   - **Đường 4:** Chạy `run_http_client.bat`, chọn phím `5` (hoặc chạy `java MyHttpClient` nhập `http://localhost/P1.html`).
+   - **Đường 1:** Mở Chrome/Edge truy cập `http://localhost/P1.html`. Thử bấm liên kết `Sang trang P2`.
+   - **Đường 2:** Mở Chrome/Edge truy cập `http://localhost:8080/P3.html`. Thử bấm liên kết `Sang trang P4`.
+   - **Đường 3:** Chạy `run_minibrowser.bat`, bấm nút **`[Đường 3: Java Server (P3.html)]`** -> Thanh status hiện `200 OK` và render trang xanh lá của Java Server!
+   - **Đường 4:** Trên MiniBrowser, bấm nút **`[Đường 4: IIS (P1.html)]`** -> Thanh status hiện `200 OK` và render trang xanh dương của IIS!
+   - **Kiểm tra ngoại lệ:** Trên MiniBrowser, bấm nút **`[Test 404 Not Found]`** -> MiniBrowser bắt mã HTTP 404 và hiển thị thông báo lỗi rõ ràng, không treo giao diện.
+
 
