@@ -24,7 +24,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * BÀI THỰC HÀNH TỔNG HỢP: LẬP TRÌNH FTP CLIENT - FTP SERVER VỚI JAVA (TCP SOCKET)
  * Đáp ứng đầy đủ 10 tiêu chí đánh giá ở Slide 30 (Control Connection, Data Connection,
  * PASV/PORT, USER/PASS, PWD/CWD/CDUP, TYPE I/A, LIST, RETR, STOR, DELE, MKD, RMD, RNFR/RNTO,
- * Multi-client Threads, chống Path Traversal, giới hạn FTP Root, Timeout, kiểm tra quyền).
+ * Multi-client Threads, chống Path Traversal, giới hạn FTP Root, Timeout, kiểm tra quyền)
+ * + TÍNH NĂNG MỚI:
+ *   1. Tự động thêm số thứ tự (1), (2), (3)... khi trùng tên tập tin/thư mục (Upload, Download, MKD).
+ *   2. Nháy đúp chuột (Double-click) vào tập tin ở bảng Local hoặc bảng FTP Server để xem trực tiếp nội dung.
  */
 public class FtpClientServerApp extends JFrame {
 
@@ -43,7 +46,7 @@ public class FtpClientServerApp extends JFrame {
     private DefaultTableModel sessionTableModel;
 
     public FtpClientServerApp() {
-        setTitle("Lập Trình Mạng Java - Hệ Thống FTP Server & FTP Client Hoàn Chỉnh (TCP Socket)");
+        setTitle("Lập Trình Mạng Java - Hệ Thống FTP Server & FTP Client (Tự Động Đánh Số File Trùng & Xem File Khi Đúp Chuột)");
         setSize(1280, 820);
         setMinimumSize(new Dimension(1100, 720));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -63,7 +66,7 @@ public class FtpClientServerApp extends JFrame {
         // Tạo Panel Client chính
         FtpClientPanel clientPanel1 = new FtpClientPanel("Client #1", activeServerPort);
 
-        mainTabs.addTab("1. Giao Diện FTP Client (Quản Lý & Truyền Tập Tin)", clientPanel1);
+        mainTabs.addTab("1. Giao Diện FTP Client (Quản Lý, Xem Trực Tiếp & Truyền Tập Tin)", clientPanel1);
         mainTabs.addTab("2. Giao Diện FTP Server (Multi-Client & Nhật Ký Hệ Thống)", serverPanel);
 
         add(mainTabs, BorderLayout.CENTER);
@@ -79,6 +82,83 @@ public class FtpClientServerApp extends JFrame {
     }
 
     /**
+     * Hàm tiện ích: Tự động tạo đường dẫn không bị trùng tên bằng cách thêm (1), (2), (3)...
+     * Ví dụ: "report.pdf" -> "report (1).pdf" -> "report (2).pdf"
+     *        "backup"     -> "backup (1)"     -> "backup (2)"
+     */
+    public static Path resolveUniquePath(Path directory, String originalName, boolean isDirectory) {
+        Path candidate = directory.resolve(originalName).normalize();
+        if (!Files.exists(candidate)) {
+            return candidate;
+        }
+
+        String baseName = originalName;
+        String extension = "";
+
+        if (!isDirectory) {
+            int dotIndex = originalName.lastIndexOf('.');
+            if (dotIndex > 0 && dotIndex < originalName.length() - 1) {
+                baseName = originalName.substring(0, dotIndex);
+                extension = originalName.substring(dotIndex); // bao gồm dấu chấm "."
+            }
+        }
+
+        // Nếu tên gốc đã có dạng "ten (k)" thì tách phần gốc để đánh số tiếp tự nhiên
+        if (baseName.matches(".*\\s\\(\\d+\\)$")) {
+            int openParen = baseName.lastIndexOf(" (");
+            if (openParen > 0) {
+                baseName = baseName.substring(0, openParen);
+            }
+        }
+
+        int counter = 1;
+        while (true) {
+            String numberedName = baseName + " (" + counter + ")" + extension;
+            Path nextCandidate = directory.resolve(numberedName).normalize();
+            if (!Files.exists(nextCandidate)) {
+                return nextCandidate;
+            }
+            counter++;
+        }
+    }
+
+    /**
+     * Hàm tiện ích: Sinh tên file không trùng dựa trên danh sách tên đã có (dùng khi kiểm tra trên Remote Table)
+     */
+    public static String resolveUniqueNameInSet(String originalName, Set<String> existingNames, boolean isDirectory) {
+        if (!existingNames.contains(originalName)) {
+            return originalName;
+        }
+
+        String baseName = originalName;
+        String extension = "";
+
+        if (!isDirectory) {
+            int dotIndex = originalName.lastIndexOf('.');
+            if (dotIndex > 0 && dotIndex < originalName.length() - 1) {
+                baseName = originalName.substring(0, dotIndex);
+                extension = originalName.substring(dotIndex);
+            }
+        }
+
+        if (baseName.matches(".*\\s\\(\\d+\\)$")) {
+            int openParen = baseName.lastIndexOf(" (");
+            if (openParen > 0) {
+                baseName = baseName.substring(0, openParen);
+            }
+        }
+
+        int counter = 1;
+        while (true) {
+            String numberedName = baseName + " (" + counter + ")" + extension;
+            if (!existingNames.contains(numberedName)) {
+                return numberedName;
+            }
+            counter++;
+        }
+    }
+
+    /**
      * Khởi tạo cấu trúc thư mục FtpRoot/ (documents, images, upload) và file mẫu giống Slide 18, 29, 30
      */
     private void initSampleDirectoriesAndFiles() {
@@ -89,20 +169,29 @@ public class FtpClientServerApp extends JFrame {
             Files.createDirectories(FTP_ROOT_DIR.resolve("data"));
 
             createSampleFileIfNotExists(FTP_ROOT_DIR.resolve("file1.txt"),
-                    "Xin chào! Đây là nội dung tập tin mẫu file1.txt trên FTP Server.\r\nMôn học: Lập trình mạng với Java - Trường Đại học Sài Gòn (SGU).");
+                    "Xin chào! Đây là nội dung tập tin mẫu file1.txt trên FTP Server.\r\n" +
+                    "Môn học: Lập trình mạng với Java - Trường Đại học Sài Gòn (SGU).\r\n" +
+                    "Bạn có thể nháy đúp chuột (Double-Click) vào bất kỳ file nào để xem trực tiếp nội dung!");
             createSampleFileIfNotExists(FTP_ROOT_DIR.resolve("report.pdf"),
-                    "%PDF-1.4\n%Mẫu tập tin nhị phân report.pdf phục vụ kiểm thử lệnh RETR (Download) với chế độ Binary (TYPE I).");
+                    "%PDF-1.4\n%Mẫu tập tin nhị phân report.pdf phục vụ kiểm thử lệnh RETR (Download) với chế độ Binary (TYPE I).\n" +
+                    "Nội dung minh họa: Báo cáo kết quả thực hành giao thức FTP qua TCP Socket.");
             createSampleFileIfNotExists(FTP_ROOT_DIR.resolve("sensor.txt"),
-                    "Time: 10:25:00 | Temp: 28.5C | Humidity: 70%\r\nTime: 10:26:00 | Temp: 28.7C | Humidity: 69%");
+                    "Time: 10:25:00 | Temp: 28.5C | Humidity: 70%\r\n" +
+                    "Time: 10:26:00 | Temp: 28.7C | Humidity: 69%\r\n" +
+                    "Time: 10:27:00 | Temp: 29.0C | Humidity: 68%");
             createSampleFileIfNotExists(FTP_ROOT_DIR.resolve("data/readme_data.txt"),
-                    "Tập tin nằm trong thư mục /data dùng để kiểm thử lệnh CWD /data và CDUP.");
+                    "Tập tin nằm trong thư mục /data dùng để kiểm thử lệnh CWD /data và CDUP.\r\n" +
+                    "Nháy đúp chuột vào file này để xem nội dung trực tiếp từ FTP Server.");
 
             // Thư mục máy Client Local
             Files.createDirectories(CLIENT_LOCAL_DIR);
             createSampleFileIfNotExists(CLIENT_LOCAL_DIR.resolve("data.txt"),
-                    "Dữ liệu mẫu từ máy Client dùng để kiểm thử lệnh STOR (Upload file lên FTP Server).\r\nSinh viên thực hành: Lập trình FTP với Java.");
+                    "Dữ liệu mẫu từ máy Client dùng để kiểm thử lệnh STOR (Upload file lên FTP Server).\r\n" +
+                    "Sinh viên thực hành: Lập trình FTP với Java.\r\n" +
+                    "Nếu bạn bấm Upload nhiều lần, hệ thống sẽ tự động lưu thành data (1).txt, data (2).txt...");
             createSampleFileIfNotExists(CLIENT_LOCAL_DIR.resolve("upload_demo.txt"),
-                    "Tập tin kiểm thử Upload (STOR) từ Client -> Server qua Data Connection.");
+                    "Tập tin kiểm thử Upload (STOR) từ Client -> Server qua Data Connection.\r\n" +
+                    "Nháy đúp chuột vào file ở bảng Local hoặc bảng Server để mở trình xem trực tiếp.");
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -267,6 +356,153 @@ public class FtpClientServerApp extends JFrame {
     }
 
     // =========================================================================================
+    // HỘP THOẠI XEM TRỰC TIẾP TẬP TIN KHI NHÁY ĐÚP CHUỘT (DIRECT FILE PREVIEW DIALOG)
+    // =========================================================================================
+    private static void showFilePreviewDialog(Component parent, String titlePrefix, String fileName,
+                                              Path filePath, boolean allowEditAndSave, Runnable onSavedCallback) {
+        try {
+            byte[] rawBytes = Files.readAllBytes(filePath);
+            long fileSize = rawBytes.length;
+
+            JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(parent),
+                    titlePrefix + " — " + fileName + " (" + fileSize + " bytes)", Dialog.ModalityType.MODELESS);
+            dialog.setSize(820, 600);
+            dialog.setLocationRelativeTo(parent);
+            dialog.setLayout(new BorderLayout(8, 8));
+
+            // Header thông tin tập tin
+            JPanel headerPanel = new JPanel(new BorderLayout(6, 4));
+            headerPanel.setBorder(new EmptyBorder(10, 12, 4, 12));
+            String modifiedTime = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss")
+                    .format(new Date(Files.getLastModifiedTime(filePath).toMillis()));
+            JLabel lblInfo = new JLabel(String.format(
+                    "<html><b>Tên tập tin:</b> <font color='#0056b3'>%s</font> &nbsp;|&nbsp; " +
+                    "<b>Kích thước:</b> %,d bytes &nbsp;|&nbsp; <b>Cập nhật:</b> %s<br>" +
+                    "<b>Đường dẫn:</b> <code>%s</code></html>",
+                    fileName, fileSize, modifiedTime, filePath.toAbsolutePath()));
+            headerPanel.add(lblInfo, BorderLayout.CENTER);
+            dialog.add(headerPanel, BorderLayout.NORTH);
+
+            String lowerName = fileName.toLowerCase();
+            boolean isImage = lowerName.endsWith(".png") || lowerName.endsWith(".jpg")
+                    || lowerName.endsWith(".jpeg") || lowerName.endsWith(".gif") || lowerName.endsWith(".bmp");
+
+            JTabbedPane previewTabs = new JTabbedPane();
+            JTextArea txtEditor = new JTextArea();
+
+            // 1. Nếu là file ảnh -> Hiển thị tab Xem Hình Ảnh trước
+            if (isImage) {
+                ImageIcon icon = new ImageIcon(rawBytes);
+                JLabel imgLabel = new JLabel(icon);
+                imgLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                previewTabs.addTab("🖼 Xem Hình Ảnh Trực Tiếp", new JScrollPane(imgLabel));
+            }
+
+            // 2. Tab Nội dung Văn bản (UTF-8)
+            String textContent = new String(rawBytes, StandardCharsets.UTF_8);
+            txtEditor.setText(textContent);
+            txtEditor.setCaretPosition(0);
+            txtEditor.setFont(new Font("Monospaced", Font.PLAIN, 13));
+            txtEditor.setEditable(allowEditAndSave && !isImage);
+            if (!txtEditor.isEditable()) {
+                txtEditor.setBackground(new Color(248, 249, 250));
+            }
+
+            JScrollPane textScroll = new JScrollPane(txtEditor);
+            previewTabs.addTab(allowEditAndSave && !isImage
+                    ? "📄 Nội Dung Văn Bản (UTF-8 - Có thể sửa & lưu)"
+                    : "📄 Nội Dung Văn Bản (UTF-8)", textScroll);
+
+            // 3. Tab Hex / Binary Inspector (Rất hữu ích khi xem file nhị phân như PDF, EXE, ZIP ở Slide 19)
+            JTextArea txtHex = new JTextArea(buildHexDump(rawBytes, 4096));
+            txtHex.setEditable(false);
+            txtHex.setCaretPosition(0);
+            txtHex.setFont(new Font("Monospaced", Font.PLAIN, 12));
+            txtHex.setBackground(new Color(22, 27, 34));
+            txtHex.setForeground(new Color(121, 192, 255));
+            previewTabs.addTab("🔢 Xem Mã Nhị Phân / Hex (Binary Inspector)", new JScrollPane(txtHex));
+
+            JPanel centerWrapper = new JPanel(new BorderLayout());
+            centerWrapper.setBorder(new EmptyBorder(0, 12, 0, 12));
+            centerWrapper.add(previewTabs, BorderLayout.CENTER);
+            dialog.add(centerWrapper, BorderLayout.CENTER);
+
+            // Thanh công cụ bên dưới
+            JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+            if (allowEditAndSave && !isImage) {
+                JButton btnSave = new JButton("💾 Lưu Thay Đổi Vào File");
+                btnSave.setBackground(new Color(40, 167, 69));
+                btnSave.setForeground(Color.WHITE);
+                btnSave.addActionListener(e -> {
+                    try {
+                        Files.writeString(filePath, txtEditor.getText(), StandardCharsets.UTF_8);
+                        if (onSavedCallback != null) onSavedCallback.run();
+                        JOptionPane.showMessageDialog(dialog, "Đã lưu nội dung tập tin thành công!",
+                                "Lưu thành công", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (IOException ex) {
+                        JOptionPane.showMessageDialog(dialog, "Lỗi khi lưu file: " + ex.getMessage(),
+                                "Lỗi", JOptionPane.ERROR_MESSAGE);
+                    }
+                });
+                footerPanel.add(btnSave);
+            }
+
+            JButton btnOpenOs = new JButton("🖥 Mở Bằng Ứng Dụng Mặc Định Của HĐH");
+            btnOpenOs.addActionListener(e -> {
+                try {
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop.getDesktop().open(filePath.toFile());
+                    } else {
+                        JOptionPane.showMessageDialog(dialog, "Hệ điều hành không hỗ trợ Desktop.open()!");
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(dialog, "Không thể mở bằng ứng dụng ngoài: " + ex.getMessage(),
+                            "Thông báo", JOptionPane.WARNING_MESSAGE);
+                }
+            });
+
+            JButton btnClose = new JButton("Đóng cửa sổ");
+            btnClose.addActionListener(e -> dialog.dispose());
+
+            footerPanel.add(btnOpenOs);
+            footerPanel.add(btnClose);
+            dialog.add(footerPanel, BorderLayout.SOUTH);
+
+            dialog.setVisible(true);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(parent, "Không thể đọc tập tin để xem trực tiếp: " + ex.getMessage(),
+                    "Lỗi đọc file", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private static String buildHexDump(byte[] data, int maxBytes) {
+        StringBuilder sb = new StringBuilder();
+        int limit = Math.min(data.length, maxBytes);
+        sb.append(String.format("Hiển thị %d / %d bytes đầu tiên ở định dạng Hexadecimal:\n", limit, data.length));
+        sb.append("Offset    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F   | ASCII\n");
+        sb.append("------------------------------------------------------------------------------\n");
+        for (int i = 0; i < limit; i += 16) {
+            sb.append(String.format("%08X  ", i));
+            StringBuilder ascii = new StringBuilder();
+            for (int j = 0; j < 16; j++) {
+                if (i + j < limit) {
+                    int b = data[i + j] & 0xFF;
+                    sb.append(String.format("%02X ", b));
+                    ascii.append((b >= 32 && b <= 126) ? (char) b : '.');
+                } else {
+                    sb.append("   ");
+                }
+                if (j == 7) sb.append(" ");
+            }
+            sb.append("  | ").append(ascii).append("\n");
+        }
+        if (data.length > maxBytes) {
+            sb.append("\n... (Còn ").append(data.length - maxBytes).append(" bytes nữa) ...");
+        }
+        return sb.toString();
+    }
+
+    // =========================================================================================
     // PHẦN 1: GIAO DIỆN & LOGIC FTP CLIENT (SLIDE 14 -> 25 & 30)
     // =========================================================================================
     private class FtpClientPanel extends JPanel {
@@ -347,7 +583,7 @@ public class FtpClientServerApp extends JFrame {
             JPanel statusRow = new JPanel(new BorderLayout(10, 4));
             statusRow.setBorder(new EmptyBorder(2, 6, 2, 6));
 
-            lblLastReplyBadge = new JLabel(" Trạng thái: Chưa kết nối (Hãy bấm '1. Connect' -> '2. Login') ");
+            lblLastReplyBadge = new JLabel(" Trạng thái: Chưa kết nối (Mẹo: Nháy đúp chuột vào File bất kỳ để xem trực tiếp!) ");
             lblLastReplyBadge.setOpaque(true);
             lblLastReplyBadge.setBackground(new Color(230, 230, 230));
             lblLastReplyBadge.setFont(new Font("SansSerif", Font.BOLD, 12));
@@ -379,14 +615,16 @@ public class FtpClientServerApp extends JFrame {
         private JSplitPane createMainSplitWorkspace() {
             // 1. Khung bên trái: Máy Client Local
             JPanel localPanel = new JPanel(new BorderLayout(5, 5));
-            localPanel.setBorder(new TitledBorder("Tập Tin Trên Máy Client (Local File System)"));
+            localPanel.setBorder(new TitledBorder("Tập Tin Trên Máy Client (Local — Nháy đúp chuột vào File để xem trực tiếp / Thư mục để mở)"));
 
             JPanel localTop = new JPanel(new BorderLayout(5, 5));
             txtLocalPath = new JTextField(currentLocalDir.toString());
             txtLocalPath.setEditable(false);
+            JButton btnLocalUp = new JButton("⬆ Lên");
             JButton btnChooseLocalFolder = new JButton("Chọn thư mục...");
             JButton btnRefreshLocal = new JButton("Làm mới");
             JPanel localBtnGroup = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+            localBtnGroup.add(btnLocalUp);
             localBtnGroup.add(btnChooseLocalFolder);
             localBtnGroup.add(btnRefreshLocal);
 
@@ -403,7 +641,54 @@ public class FtpClientServerApp extends JFrame {
             tblLocal = new JTable(localTableModel);
             tblLocal.setRowHeight(24);
 
-            btnUpload = new JButton("⬆ UPLOAD LÊN SERVER (Lệnh STOR qua Data Connection)");
+            // Tô màu thư mục ở bảng Local
+            tblLocal.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+                @Override
+                public Component getTableCellRendererComponent(JTable table, Object value,
+                                                               boolean isSelected, boolean hasFocus, int row, int column) {
+                    Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                    String type = String.valueOf(table.getValueAt(row, 1));
+                    if (!isSelected) {
+                        if ("DIRECTORY".equals(type)) {
+                            c.setForeground(new Color(0, 86, 179));
+                            c.setFont(c.getFont().deriveFont(Font.BOLD));
+                        } else {
+                            c.setForeground(Color.BLACK);
+                            c.setFont(c.getFont().deriveFont(Font.PLAIN));
+                        }
+                    }
+                    return c;
+                }
+            });
+
+            // TÍNH NĂNG MỚI: Nháy đúp chuột vào bảng Local để mở thư mục hoặc XEM TRỰC TIẾP FILE
+            tblLocal.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2) {
+                        int row = tblLocal.getSelectedRow();
+                        if (row >= 0) {
+                            String name = String.valueOf(localTableModel.getValueAt(row, 0));
+                            String type = String.valueOf(localTableModel.getValueAt(row, 1));
+                            Path target = currentLocalDir.resolve(name).normalize();
+                            if ("DIRECTORY".equals(type)) {
+                                if (Files.isDirectory(target)) {
+                                    currentLocalDir = target;
+                                    txtLocalPath.setText(currentLocalDir.toString());
+                                    refreshLocalFileTable();
+                                }
+                            } else if ("FILE".equals(type) && Files.exists(target)) {
+                                appendClientLog("[XEM FILE LOCAL] Mở trình xem trực tiếp cho file: " + target.getFileName());
+                                showFilePreviewDialog(FtpClientPanel.this,
+                                        "Xem File Trên Máy Client (Local)",
+                                        name, target, true, FtpClientPanel.this::refreshLocalFileTable);
+                            }
+                        }
+                    }
+                }
+            });
+
+            btnUpload = new JButton("⬆ UPLOAD LÊN SERVER (Lệnh STOR — Tự động thêm số nếu trùng tên)");
             btnUpload.setFont(new Font("SansSerif", Font.BOLD, 12));
             btnUpload.setBackground(new Color(0, 123, 255));
             btnUpload.setForeground(Color.WHITE);
@@ -412,6 +697,13 @@ public class FtpClientServerApp extends JFrame {
             localPanel.add(new JScrollPane(tblLocal), BorderLayout.CENTER);
             localPanel.add(btnUpload, BorderLayout.SOUTH);
 
+            btnLocalUp.addActionListener(e -> {
+                if (currentLocalDir.getParent() != null) {
+                    currentLocalDir = currentLocalDir.getParent();
+                    txtLocalPath.setText(currentLocalDir.toString());
+                    refreshLocalFileTable();
+                }
+            });
             btnRefreshLocal.addActionListener(e -> refreshLocalFileTable());
             btnChooseLocalFolder.addActionListener(e -> {
                 JFileChooser chooser = new JFileChooser(currentLocalDir.toFile());
@@ -426,9 +718,8 @@ public class FtpClientServerApp extends JFrame {
 
             // 2. Khung bên phải: Máy chủ FTP Server (Remote)
             JPanel remotePanel = new JPanel(new BorderLayout(5, 5));
-            remotePanel.setBorder(new TitledBorder("Tập Tin Trên FTP Server (Remote FTP Root - Giao Tiếp Qua Data Connection)"));
+            remotePanel.setBorder(new TitledBorder("Tập Tin Trên FTP Server (Remote — Nháy đúp chuột vào File để xem trực tiếp / Thư mục để CWD)"));
 
-            JPanel remoteTop = new JPanel(new BorderLayout(5, 5));
             txtRemotePwd = new JTextField("/");
             txtRemotePwd.setEditable(false);
             txtRemotePwd.setFont(new Font("Monospaced", Font.BOLD, 13));
@@ -487,7 +778,9 @@ public class FtpClientServerApp extends JFrame {
                 }
             });
 
-            // Double click vào thư mục trên bảng Server để tự động gửi lệnh CWD chuyển thư mục
+            // TÍNH NĂNG MỚI: Double-click vào bảng Remote:
+            // - Nếu là DIRECTORY: Gửi lệnh CWD để chuyển thư mục.
+            // - Nếu là FILE: Tải ngầm qua Data Connection (RETR) và mở cửa sổ XEM TRỰC TIẾP!
             tblRemote.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
@@ -498,13 +791,15 @@ public class FtpClientServerApp extends JFrame {
                             String name = String.valueOf(remoteTableModel.getValueAt(row, 2));
                             if ("DIRECTORY".equals(type)) {
                                 doChangeWorkingDirectory(name);
+                            } else if ("FILE".equals(type)) {
+                                doPreviewRemoteFile(name);
                             }
                         }
                     }
                 }
             });
 
-            btnDownload = new JButton("⬇ DOWNLOAD VỀ MÁY CLIENT (Lệnh RETR qua Data Connection)");
+            btnDownload = new JButton("⬇ DOWNLOAD VỀ MÁY CLIENT (Lệnh RETR — Tự động thêm số nếu trùng tên)");
             btnDownload.setFont(new Font("SansSerif", Font.BOLD, 12));
             btnDownload.setBackground(new Color(40, 167, 69));
             btnDownload.setForeground(Color.WHITE);
@@ -584,6 +879,14 @@ public class FtpClientServerApp extends JFrame {
             } catch (Exception ex) {
                 appendClientLog("[ERROR] Không thể đọc thư mục Local: " + ex.getMessage());
             }
+        }
+
+        private Set<String> getCurrentRemoteNames() {
+            Set<String> names = new HashSet<>();
+            for (int i = 0; i < remoteTableModel.getRowCount(); i++) {
+                names.add(String.valueOf(remoteTableModel.getValueAt(i, 2)));
+            }
+            return names;
         }
 
         private void updateActionButtonsState(boolean connected, boolean loggedIn) {
@@ -732,6 +1035,40 @@ public class FtpClientServerApp extends JFrame {
             }).start();
         }
 
+        /**
+         * TÍNH NĂNG MỚI: Xem trực tiếp nội dung file trên FTP Server khi nháy đúp chuột
+         * Hệ thống tải file qua Data Connection (lệnh RETR) vào một file tạm rồi mở hộp thoại Preview
+         */
+        private void doPreviewRemoteFile(String remoteFileName) {
+            if (ftpClient == null || !ftpClient.isLoggedIn()) return;
+            new Thread(() -> {
+                try {
+                    String ext = "";
+                    int dot = remoteFileName.lastIndexOf('.');
+                    if (dot >= 0) ext = remoteFileName.substring(dot);
+
+                    Path tempPreviewFile = Files.createTempFile("ftp_preview_", "_" + remoteFileName.replaceAll("[^a-zA-Z0-9._-]", "_") + ext);
+                    tempPreviewFile.toFile().deleteOnExit();
+
+                    appendClientLog("[XEM FILE TRỰC TIẾP] Đang tải nội dung '" + remoteFileName + "' qua Data Connection để xem...");
+                    sendTypeCommand();
+                    boolean ok = ftpClient.downloadFile(remoteFileName, tempPreviewFile, isPassiveSelected());
+                    if (ok) {
+                        SwingUtilities.invokeLater(() -> showFilePreviewDialog(
+                                FtpClientPanel.this,
+                                "Xem Trực Tiếp File Trên FTP Server (" + txtRemotePwd.getText() + ")",
+                                remoteFileName,
+                                tempPreviewFile,
+                                false,
+                                null
+                        ));
+                    }
+                } catch (Exception ex) {
+                    appendClientLog("[LỖI XEM FILE SERVER] " + ex.getMessage());
+                }
+            }).start();
+        }
+
         private void doCdup() {
             new Thread(() -> {
                 try {
@@ -765,6 +1102,10 @@ public class FtpClientServerApp extends JFrame {
             }).start();
         }
 
+        /**
+         * Upload file từ Client lên Server (Lệnh STOR)
+         * Nếu trên Server đã có file cùng tên, tự động thêm số (1), (2)...
+         */
         private void doUploadSelectedFile() {
             int row = tblLocal.getSelectedRow();
             if (row < 0) {
@@ -778,10 +1119,18 @@ public class FtpClientServerApp extends JFrame {
                 return;
             }
             Path localFile = currentLocalDir.resolve(fileName);
+
+            // Kiểm tra trùng tên trên bảng Remote hiện tại để sinh tên có số (1), (2)...
+            Set<String> existingRemoteNames = getCurrentRemoteNames();
+            String targetRemoteName = resolveUniqueNameInSet(fileName, existingRemoteNames, false);
+            if (!targetRemoteName.equals(fileName)) {
+                appendClientLog("[AUTO-RENAME UPLOAD] File '" + fileName + "' đã tồn tại trên Server -> Tự động đổi tên thành: '" + targetRemoteName + "'");
+            }
+
             new Thread(() -> {
                 try {
                     sendTypeCommand();
-                    boolean ok = ftpClient.uploadFile(localFile, fileName, isPassiveSelected());
+                    boolean ok = ftpClient.uploadFile(localFile, targetRemoteName, isPassiveSelected());
                     if (ok) {
                         List<RemoteFileEntry> entries = ftpClient.listFiles(isPassiveSelected());
                         SwingUtilities.invokeLater(() -> populateRemoteTable(entries));
@@ -792,6 +1141,10 @@ public class FtpClientServerApp extends JFrame {
             }).start();
         }
 
+        /**
+         * Download file từ Server về Client (Lệnh RETR)
+         * Nếu trong thư mục Local đã có file cùng tên, tự động lưu thành tên có đánh số (1), (2)...
+         */
         private void doDownloadSelectedFile() {
             int row = tblRemote.getSelectedRow();
             if (row < 0) {
@@ -804,7 +1157,14 @@ public class FtpClientServerApp extends JFrame {
                 JOptionPane.showMessageDialog(this, "Không thể dùng RETR cho thư mục. Hãy nháy đúp vào thư mục để mở, hoặc chọn 1 File!");
                 return;
             }
-            Path savePath = currentLocalDir.resolve(remoteFileName);
+
+            // Tự động tạo đường dẫn Local không trùng tên: ví dụ report (1).pdf, report (2).pdf
+            Path savePath = resolveUniquePath(currentLocalDir, remoteFileName, false);
+            String savedFileName = savePath.getFileName().toString();
+            if (!savedFileName.equals(remoteFileName)) {
+                appendClientLog("[AUTO-RENAME DOWNLOAD] File '" + remoteFileName + "' đã tồn tại trên máy Client -> Tự động lưu thành: '" + savedFileName + "'");
+            }
+
             new Thread(() -> {
                 try {
                     sendTypeCommand();
@@ -819,11 +1179,19 @@ public class FtpClientServerApp extends JFrame {
         }
 
         private void doMakeDirectory() {
-            String folderName = JOptionPane.showInputDialog(this, "Nhập tên thư mục mới cần tạo (Lệnh MKD):", "backup");
+            String folderName = JOptionPane.showInputDialog(this,
+                    "Nhập tên thư mục mới cần tạo (Lệnh MKD - Tự động thêm số nếu trùng):", "backup");
             if (folderName == null || folderName.isBlank()) return;
+
+            Set<String> existingRemoteNames = getCurrentRemoteNames();
+            String uniqueFolder = resolveUniqueNameInSet(folderName.trim(), existingRemoteNames, true);
+            if (!uniqueFolder.equals(folderName.trim())) {
+                appendClientLog("[AUTO-RENAME MKD] Thư mục '" + folderName.trim() + "' đã tồn tại -> Tự động tạo: '" + uniqueFolder + "'");
+            }
+
             new Thread(() -> {
                 try {
-                    FtpReply rep = ftpClient.makeDirectory(folderName.trim());
+                    FtpReply rep = ftpClient.makeDirectory(uniqueFolder);
                     if (rep.isSuccess()) {
                         List<RemoteFileEntry> entries = ftpClient.listFiles(isPassiveSelected());
                         SwingUtilities.invokeLater(() -> populateRemoteTable(entries));
@@ -881,7 +1249,7 @@ public class FtpClientServerApp extends JFrame {
             String oldDefault = (row >= 0) ? String.valueOf(remoteTableModel.getValueAt(row, 2)) : "file1.txt";
             String oldName = JOptionPane.showInputDialog(this, "Bước 1 (RNFR) - Tên cũ trên Server:", oldDefault);
             if (oldName == null || oldName.isBlank()) return;
-            String newName = JOptionPane.showInputDialog(this, "Bước 2 (RNTO) - Nhập tên mới:", "renamed_" + oldName.trim());
+            String newName = JOptionPane.showInputDialog(this, "Bước 2 (RNTO) - Nhập tên mới (Tự động thêm số nếu trùng):", "renamed_" + oldName.trim());
             if (newName == null || newName.isBlank()) return;
 
             new Thread(() -> {
@@ -977,14 +1345,14 @@ public class FtpClientServerApp extends JFrame {
                     ftpClient.setType("I");
 
                     // LIST
-                    List<RemoteFileEntry> list = ftpClient.listFiles(true);
+                    ftpClient.listFiles(true);
 
-                    // STOR (Upload data.txt)
+                    // STOR (Upload data.txt - nếu chạy nhiều lần Server sẽ tự động đánh số (1), (2)...)
                     Path sampleUpload = CLIENT_LOCAL_DIR.resolve("data.txt");
                     ftpClient.uploadFile(sampleUpload, "data_uploaded_test.txt", true);
 
-                    // RETR (Download report.pdf)
-                    Path sampleDownload = CLIENT_LOCAL_DIR.resolve("downloaded_report.pdf");
+                    // RETR (Download report.pdf - tự động đánh số nếu trùng ở Local)
+                    Path sampleDownload = resolveUniquePath(CLIENT_LOCAL_DIR, "downloaded_report.pdf", false);
                     ftpClient.downloadFile("report.pdf", sampleDownload, true);
 
                     // RETR file không tồn tại (Mong đợi: 550 File unavailable)
@@ -1645,12 +2013,15 @@ public class FtpClientServerApp extends JFrame {
                         sendReply(writer, session, "550 Permission denied");
                         break;
                     }
-                    Path newDir = resolveSafePath(session, param);
-                    if (newDir == null || Files.exists(newDir)) {
+                    Path requestedDir = resolveSafePath(session, param);
+                    if (requestedDir == null) {
                         sendReply(writer, session, "550 Cannot create directory");
                     } else {
-                        Files.createDirectories(newDir);
-                        sendReply(writer, session, "257 \"" + param + "\" created");
+                        // Tự động đánh số (1), (2)... nếu thư mục đã tồn tại trên Server
+                        Path parent = requestedDir.getParent() != null ? requestedDir.getParent() : rootDir;
+                        Path finalDir = resolveUniquePath(parent, requestedDir.getFileName().toString(), true);
+                        Files.createDirectories(finalDir);
+                        sendReply(writer, session, "257 \"" + finalDir.getFileName().toString() + "\" created");
                     }
                 }
                 case "RMD", "XRMD" -> {
@@ -1696,9 +2067,15 @@ public class FtpClientServerApp extends JFrame {
                     if (dest == null) {
                         sendReply(writer, session, "550 Access denied");
                     } else {
+                        // Nếu tên mới bị trùng với một file khác thì tự động thêm số (1), (2)...
+                        boolean isDir = Files.isDirectory(session.pendingRenameSource);
+                        if (Files.exists(dest) && !dest.equals(session.pendingRenameSource)) {
+                            Path parent = dest.getParent() != null ? dest.getParent() : rootDir;
+                            dest = resolveUniquePath(parent, dest.getFileName().toString(), isDir);
+                        }
                         Files.move(session.pendingRenameSource, dest, StandardCopyOption.REPLACE_EXISTING);
                         session.pendingRenameSource = null;
-                        sendReply(writer, session, "250 Rename successful");
+                        sendReply(writer, session, "250 Rename successful (Saved as " + dest.getFileName() + ")");
                     }
                 }
                 case "SYST" -> sendReply(writer, session, "215 UNIX Type: L8 (Java FTP Server)");
@@ -1792,19 +2169,28 @@ public class FtpClientServerApp extends JFrame {
                 sendReply(writer, session, "550 Permission denied");
                 return;
             }
-            Path targetFile = resolveSafePath(session, param);
-            if (targetFile == null || Files.isDirectory(targetFile)) {
+            Path requestedFile = resolveSafePath(session, param);
+            if (requestedFile == null || Files.isDirectory(requestedFile)) {
                 sendReply(writer, session, "550 Access denied");
                 return;
             }
-            sendReply(writer, session, "150 Opening data connection");
+
+            // TÍNH NĂNG MỚI: Nếu file đích trên Server đã tồn tại, tự động thêm số (1), (2)...
+            Path parentDir = requestedFile.getParent() != null ? requestedFile.getParent() : rootDir;
+            Path targetFile = resolveUniquePath(parentDir, requestedFile.getFileName().toString(), false);
+            if (!targetFile.equals(requestedFile)) {
+                serverLogger.log("[AUTO-NUMBER STOR] File '" + requestedFile.getFileName()
+                        + "' đã tồn tại -> Server tự động lưu thành '" + targetFile.getFileName() + "'");
+            }
+
+            sendReply(writer, session, "150 Opening data connection (Saving as " + targetFile.getFileName() + ")");
             try (Socket dataSocket = openDataSocket(session)) {
                 if (dataSocket == null) {
                     sendReply(writer, session, "425 Can't open data connection");
                     return;
                 }
                 try (InputStream dataIn = dataSocket.getInputStream();
-                     OutputStream fileOut = Files.newOutputStream(targetFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                     OutputStream fileOut = Files.newOutputStream(targetFile, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
                     dataIn.transferTo(fileOut);
                     fileOut.flush();
                 }
@@ -1812,7 +2198,7 @@ public class FtpClientServerApp extends JFrame {
                 sendReply(writer, session, "426 Connection closed; transfer aborted");
                 return;
             }
-            sendReply(writer, session, "226 Transfer complete");
+            sendReply(writer, session, "226 Transfer complete (" + targetFile.getFileName() + ")");
         }
 
         /**

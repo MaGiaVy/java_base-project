@@ -1,0 +1,2 @@
+Dữ liệu mẫu từ máy Client dùng để kiểm thử lệnh STOR (Upload file lên FTP Server).
+Sinh viên thực hành: Lập trình FTP với Java.
