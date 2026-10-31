@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Java build artifacts
+bin/
+*.class
+
+# Temporary / Scratch
+scratch/
+*.log

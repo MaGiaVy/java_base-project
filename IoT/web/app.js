@@ -240,9 +240,8 @@ function connectMQTT() {
       console.log('[MQTT] Kết nối thành công tới:', url);
       updateConnectionUI(true, 'Đã kết nối Broker');
 
-      // Đăng ký nhận dữ liệu cảm biến và lệnh điều khiển
+      // Đăng ký nhận dữ liệu cảm biến (topic chính) và lệnh điều khiển
       mqttClient.subscribe(TOPICS.TELEMETRY, { qos: 0 });
-      mqttClient.subscribe(TOPICS.LEGACY_TELEMETRY, { qos: 0 });
       mqttClient.subscribe(TOPICS.LED_CMD, { qos: 0 });
       mqttClient.subscribe(TOPICS.STATUS, { qos: 0 });
 

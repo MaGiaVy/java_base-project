@@ -156,10 +156,10 @@ void loop() {
       return;
     }
 
-    // Đóng gói JSON payload
+    // Đóng gói JSON payload an toàn (tránh dangling pointer của temporary String)
     StaticJsonDocument<128> doc;
-    doc["temperature"] = serialized(String(data.temperature, 1));
-    doc["humidity"] = serialized(String(data.humidity, 1));
+    doc["temperature"] = round(data.temperature * 10.0) / 10.0;
+    doc["humidity"] = round(data.humidity * 10.0) / 10.0;
 
     char jsonBuffer[128];
     serializeJson(doc, jsonBuffer);

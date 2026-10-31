@@ -311,10 +311,6 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
         new Thread(() -> {
             try {
                 mqttManager.connect(url, clientId, user, pass);
-                mqttManager.subscribe(TOPIC_TELEMETRY, 0);
-                mqttManager.subscribe(TOPIC_LEGACY_TELEMETRY, 0);
-                mqttManager.subscribe(TOPIC_LED_CMD, 0);
-                mqttManager.subscribe(TOPIC_STATUS, 0);
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
                     lblStatusBadge.setText(" ● Lỗi: " + ex.getMessage());
@@ -370,13 +366,13 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
             double temp = Double.NaN;
             double hum = Double.NaN;
 
-            Pattern pTemp = Pattern.compile("\"temperature\"\\s*:\\s*([0-9.]+)");
+            Pattern pTemp = Pattern.compile("\"temperature\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
             Matcher mTemp = pTemp.matcher(payload);
             if (mTemp.find()) {
                 temp = Double.parseDouble(mTemp.group(1));
             }
 
-            Pattern pHum = Pattern.compile("\"humidity\"\\s*:\\s*([0-9.]+)");
+            Pattern pHum = Pattern.compile("\"humidity\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
             Matcher mHum = pHum.matcher(payload);
             if (mHum.find()) {
                 hum = Double.parseDouble(mHum.group(1));
@@ -445,6 +441,15 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
             btnDisconnect.setEnabled(true);
             addLogRow("[HỆ THỐNG]", "Đã kết nối thành công tới " + brokerUrl);
         });
+
+        // Tự động đăng ký lại topic mỗi khi kết nối hoặc tự động kết nối lại (Auto-reconnect)
+        try {
+            mqttManager.subscribe(TOPIC_TELEMETRY, 0);
+            mqttManager.subscribe(TOPIC_LED_CMD, 0);
+            mqttManager.subscribe(TOPIC_STATUS, 0);
+        } catch (Exception ex) {
+            System.err.println("Lỗi đăng ký topic khi kết nối: " + ex.getMessage());
+        }
     }
 
     @Override
