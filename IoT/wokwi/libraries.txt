@@ -1,0 +1,4 @@
+# Wokwi Arduino / ESP32 Libraries
+PubSubClient
+DHT sensor library for ESPx
+ArduinoJson
