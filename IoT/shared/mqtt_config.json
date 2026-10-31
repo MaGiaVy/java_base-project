@@ -1,0 +1,39 @@
+{
+  "system_name": "IoT Smart Monitoring & Control System",
+  "version": "1.0.0",
+  "active_profile": "local",
+  "local": {
+    "broker_host": "localhost",
+    "tcp_port": 1883,
+    "ws_port": 9001,
+    "ws_path": "",
+    "username": "user1",
+    "password": "123",
+    "use_auth": true,
+    "notes": "Chạy Mosquitto trên máy tính local. Port 1883 cho TCP (ESP32/Java), Port 9001 cho WebSockets (Browser)."
+  },
+  "public_fallback": {
+    "broker_host": "broker.emqx.io",
+    "tcp_port": 1883,
+    "ws_port": 8083,
+    "ws_path": "/mqtt",
+    "username": "",
+    "password": "",
+    "use_auth": false,
+    "notes": "Dùng public broker miễn phí khi chạy Wokwi trên web mà không cần cài Mosquitto trên máy."
+  },
+  "topics": {
+    "telemetry": "esp32/sensor/dht22/data",
+    "legacy_telemetry": "sensor/data",
+    "led_command": "esp32/led/command",
+    "device_status": "esp32/status"
+  },
+  "telemetry_payload_schema": {
+    "temperature": "float (°C)",
+    "humidity": "float (%)"
+  },
+  "led_command_values": ["ON", "OFF"],
+  "alert_thresholds": {
+    "temperature_max": 35.0
+  }
+}
