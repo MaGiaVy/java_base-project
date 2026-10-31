@@ -21,6 +21,8 @@ import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Giao diện FTP Client hoàn chỉnh với bố cục Dual-Pane (Local - Remote)
@@ -573,7 +575,11 @@ public class FtpClientPanel extends JPanel {
         }
 
         final File fileToUpload = localFile;
-        final String remoteFileName = name;
+        // Kiểm tra và tự động tạo tên bản sao nếu file đã tồn tại trên Server (ví dụ: file(1).txt)
+        final String remoteFileName = getUniqueRemoteFileName(name);
+        if (!remoteFileName.equals(name)) {
+            appendLog("[CLIENT] Phát hiện tập tin trùng tên trên Server! Tự động lưu thành bản sao: " + remoteFileName);
+        }
 
         progressBar.setValue(0);
         lblProgressInfo.setText("Đang tải lên: " + remoteFileName + "...");
@@ -618,21 +624,27 @@ public class FtpClientPanel extends JPanel {
             return;
         }
 
-        File destFile = localCurrentDir.resolve(name).toFile();
+        // Kiểm tra và tự động tạo tên bản sao nếu file đã tồn tại ở máy cục bộ (ví dụ: file(1).txt)
+        File destFile = getUniqueLocalFile(localCurrentDir, name);
+        final String finalLocalName = destFile.getName();
+        if (!finalLocalName.equals(name)) {
+            appendLog("[CLIENT] Phát hiện tập tin trùng tên ở máy cục bộ! Tự động lưu thành bản sao: " + finalLocalName);
+        }
+
         progressBar.setValue(0);
-        lblProgressInfo.setText("Đang tải xuống: " + name + "...");
+        lblProgressInfo.setText("Đang tải xuống: " + finalLocalName + "...");
 
         new Thread(() -> {
             try {
                 boolean ok = ftpClient.downloadFile(name, destFile, (transferred, total, speed) -> {
                     SwingUtilities.invokeLater(() -> {
-                        lblProgressInfo.setText(String.format("Tải xuống: %s (%.1f KB) - %.1f KB/s", name, transferred / 1024.0, speed));
+                        lblProgressInfo.setText(String.format("Tải xuống: %s (%.1f KB) - %.1f KB/s", finalLocalName, transferred / 1024.0, speed));
                     });
                 });
                 SwingUtilities.invokeLater(() -> {
                     if (ok) {
                         progressBar.setValue(100);
-                        lblProgressInfo.setText("Đã tải xuống thành công: " + name);
+                        lblProgressInfo.setText("Đã tải xuống thành công: " + finalLocalName);
                         refreshLocalFiles();
                     } else {
                         lblProgressInfo.setText("Tải xuống thất bại!");
@@ -645,6 +657,76 @@ public class FtpClientPanel extends JPanel {
                 });
             }
         }).start();
+    }
+
+    private static final Pattern COPY_SUFFIX_PATTERN = Pattern.compile("^(.*?)\\((\\d+)\\)$");
+
+    private String getUniqueRemoteFileName(String originalName) {
+        if (!isRemoteFileExists(originalName)) {
+            return originalName;
+        }
+        String baseName = originalName;
+        String extension = "";
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            baseName = originalName.substring(0, dotIndex);
+            extension = originalName.substring(dotIndex);
+        }
+
+        int counter = 1;
+        Matcher m = COPY_SUFFIX_PATTERN.matcher(baseName);
+        if (m.matches()) {
+            baseName = m.group(1);
+            counter = Integer.parseInt(m.group(2)) + 1;
+        }
+
+        while (true) {
+            String candidate = baseName + "(" + counter + ")" + extension;
+            if (!isRemoteFileExists(candidate)) {
+                return candidate;
+            }
+            counter++;
+        }
+    }
+
+    private boolean isRemoteFileExists(String filename) {
+        if (filename == null) return false;
+        for (int i = 0; i < remoteModel.getRowCount(); i++) {
+            String name = (String) remoteModel.getValueAt(i, 1);
+            if (filename.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private File getUniqueLocalFile(Path dir, String originalName) {
+        File initial = dir.resolve(originalName).toFile();
+        if (!initial.exists()) {
+            return initial;
+        }
+        String baseName = originalName;
+        String extension = "";
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            baseName = originalName.substring(0, dotIndex);
+            extension = originalName.substring(dotIndex);
+        }
+
+        int counter = 1;
+        Matcher m = COPY_SUFFIX_PATTERN.matcher(baseName);
+        if (m.matches()) {
+            baseName = m.group(1);
+            counter = Integer.parseInt(m.group(2)) + 1;
+        }
+
+        while (true) {
+            File candidate = dir.resolve(baseName + "(" + counter + ")" + extension).toFile();
+            if (!candidate.exists()) {
+                return candidate;
+            }
+            counter++;
+        }
     }
 
     private void doNewFolder() {
