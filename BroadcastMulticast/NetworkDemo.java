@@ -5,16 +5,28 @@ import java.util.List;
 
 /**
  * NetworkDemo.java - Launcher tổng hợp UDP Broadcast & Multicast
- * Tự động nhận diện và ưu tiên card Mobile Hotspot (192.168.137.x / Local Area Connection*).
+ * Toàn bộ chữ đen sắc nét trên nền Pastel có viền đậm rõ ràng.
  */
 public class NetworkDemo {
 
-    static final Color C_BROADCAST = new Color(0x1565C0);
-    static final Color C_MULTICAST  = new Color(0x2E7D32);
-    static final Color C_SENDER     = new Color(0xE65100);
-    static final Color C_RECEIVER   = new Color(0x6A1B9A);
-    static final Color C_BG         = new Color(0xF5F5F5);
-    static final Color C_TEXT       = Color.WHITE;
+    // Màu nền Pastel và viền đậm tương phản cao
+    static final Color C_BROADCAST  = new Color(0xBBDEFB); // Xanh dương pastel
+    static final Color B_BROADCAST  = new Color(0x1976D2); // Viền xanh dương đậm
+
+    static final Color C_MULTICAST  = new Color(0xC8E6C9); // Xanh lá pastel
+    static final Color B_MULTICAST  = new Color(0x388E3C); // Viền xanh lá đậm
+
+    static final Color C_UNIFIED    = new Color(0xB2DFDB); // Xanh ngọc pastel
+    static final Color B_UNIFIED    = new Color(0x00796B); // Viền xanh ngọc đậm
+
+    static final Color C_SENDER     = new Color(0xFFE0B2); // Cam pastel
+    static final Color B_SENDER     = new Color(0xF57C00); // Viền cam đậm
+
+    static final Color C_RECEIVER   = new Color(0xE1BEE7); // Tím pastel
+    static final Color B_RECEIVER   = new Color(0x7B1FA2); // Viền tím đậm
+
+    static final Color C_BG         = new Color(0xF5F7FA);
+    static final Color C_TEXT       = Color.BLACK;
 
     public static void main(String[] args) {
         if (GraphicsEnvironment.isHeadless()) {
@@ -31,7 +43,7 @@ public class NetworkDemo {
     static void showMainMenu(String[] args) {
         JFrame frame = new JFrame("📡 Broadcast & Multicast Demo");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(620, 480);
+        frame.setSize(640, 500);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
@@ -41,21 +53,23 @@ public class NetworkDemo {
 
         JLabel title = new JLabel("Chọn chế độ truyền dữ liệu / Select Mode", SwingConstants.CENTER);
         title.setFont(new Font("SansSerif", Font.BOLD, 18));
+        title.setForeground(C_TEXT);
         root.add(title, BorderLayout.NORTH);
 
         JPanel center = new JPanel(new GridLayout(3, 1, 0, 10));
         center.setBackground(C_BG);
 
         JButton btnUnified = bigButton("💬 PHÒNG CHAT HỢP NHẤT (KHUYÊN DÙNG)",
-                "<html><center>Gộp <b>Broadcast & Multicast</b> trong 1 đoạn chat duy nhất (Gửi & Nhận 2 chiều)</center></html>",
-                new Color(0x00796B));
+                "Gộp Broadcast & Multicast trong 1 giao diện (Gửi & Nhận 2 chiều, chọn nhóm)",
+                C_UNIFIED, B_UNIFIED);
 
         JButton btnBroadcast = bigButton("📢 BROADCAST RIÊNG",
-                "<html><center>Gửi tới <b>mọi máy</b> trong mạng<br><small>DatagramSocket + setBroadcast(true)</small></center></html>",
-                C_BROADCAST);
+                "Gửi tới mọi máy trong toàn mạng (DatagramSocket + setBroadcast)",
+                C_BROADCAST, B_BROADCAST);
+
         JButton btnMulticast = bigButton("📡 MULTICAST RIÊNG",
-                "<html><center>Gửi tới <b>nhóm đã đăng ký</b><br><small>MulticastSocket + joinGroup</small></center></html>",
-                C_MULTICAST);
+                "Gửi tới nhóm đã đăng ký (MulticastSocket + joinGroup)",
+                C_MULTICAST, B_MULTICAST);
 
         center.add(btnUnified);
         center.add(btnBroadcast);
@@ -66,11 +80,11 @@ public class NetworkDemo {
 
         // Hiển thị card mạng hotspot được phát hiện
         List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
-        String detectedNotice = "<html><center><small>💡 Broadcast = loa phóng thanh | Multicast = group chat<br>";
+        String detectedNotice = "<html><center><small><b style='color:#000000;'>💡 Broadcast = loa phóng thanh toàn mạng | Multicast = group chat theo nhóm</b><br>";
         if (!cards.isEmpty() && cards.get(0).isHotspot) {
-            detectedNotice += "<b style='color:#D84315'>🔥 Đã tự nhận diện Mobile Hotspot: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</b>";
+            detectedNotice += "<b style='color:#BF360C;'>🔥 Đã tự nhận diện Mobile Hotspot: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</b>";
         } else if (!cards.isEmpty()) {
-            detectedNotice += "<span style='color:gray'>Card mặc định: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</span>";
+            detectedNotice += "<span style='color:#000000;'>Card mặc định: " + cards.get(0).ip + " (" + cards.get(0).displayName + ")</span>";
         }
         detectedNotice += "</small></center></html>";
 
@@ -92,11 +106,11 @@ public class NetworkDemo {
     static void showRoleMenu(String mode) {
         JFrame frame = new JFrame("📡 " + mode + " - Chọn vai trò / Choose Role");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(680, 530);
+        frame.setSize(680, 540);
         frame.setLocationRelativeTo(null);
         frame.setResizable(false);
 
-        Color modeColor = mode.equals("BROADCAST") ? C_BROADCAST : C_MULTICAST;
+        Color modeBorder = mode.equals("BROADCAST") ? B_BROADCAST : B_MULTICAST;
 
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.setBackground(C_BG);
@@ -104,17 +118,17 @@ public class NetworkDemo {
 
         // Header
         JLabel title = new JLabel("Chế độ: " + mode, SwingConstants.CENTER);
-        title.setFont(new Font("SansSerif", Font.BOLD, 17));
-        title.setForeground(modeColor);
+        title.setFont(new Font("SansSerif", Font.BOLD, 18));
+        title.setForeground(C_TEXT);
         root.add(title, BorderLayout.NORTH);
 
         // Config panel
         JPanel cfg = new JPanel(new GridBagLayout());
-        cfg.setBackground(C_BG);
+        cfg.setBackground(Color.WHITE);
         cfg.setBorder(BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(modeColor, 1), " ⚙️ Cấu hình mạng & tài khoản ",
+                BorderFactory.createLineBorder(modeBorder, 2), " ⚙️ Cấu hình mạng & tài khoản ",
                 TitledBorder.LEFT, TitledBorder.TOP,
-                new Font("SansSerif", Font.BOLD, 12), modeColor));
+                new Font("SansSerif", Font.BOLD, 12), C_TEXT));
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 8, 6, 8);
@@ -123,35 +137,52 @@ public class NetworkDemo {
 
         // 1. Nickname
         gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0;
-        cfg.add(new JLabel("Nickname:"), gbc);
+        JLabel lblNick = new JLabel("Nickname:");
+        lblNick.setFont(new Font("SansSerif", Font.BOLD, 12));
+        lblNick.setForeground(C_TEXT);
+        cfg.add(lblNick, gbc);
+
         JTextField txtNick = new JTextField(System.getProperty("user.name", "user"), 14);
+        txtNick.setFont(new Font("SansSerif", Font.BOLD, 12));
+        txtNick.setForeground(C_TEXT);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtNick, gbc);
 
-        // 2. Card mạng (Ưu tiên Hotspot tự chọn mục đầu tiên)
+        // 2. Card mạng
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
-        cfg.add(new JLabel("Card mạng:"), gbc);
+        JLabel lblCard = new JLabel("Card mạng:");
+        lblCard.setFont(new Font("SansSerif", Font.BOLD, 12));
+        lblCard.setForeground(C_TEXT);
+        cfg.add(lblCard, gbc);
 
         List<NetworkHelper.CardInfo> cards = NetworkHelper.getAvailableCards();
         JComboBox<NetworkHelper.CardInfo> cbCards = new JComboBox<>(cards.toArray(new NetworkHelper.CardInfo[0]));
         cbCards.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        cbCards.setForeground(C_TEXT);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(cbCards, gbc);
 
         // 3. Port
         gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
-        cfg.add(new JLabel("Port UDP:"), gbc);
+        JLabel lblPort = new JLabel("Port UDP:");
+        lblPort.setFont(new Font("SansSerif", Font.BOLD, 12));
+        lblPort.setForeground(C_TEXT);
+        cfg.add(lblPort, gbc);
+
         String defaultPort = mode.equals("BROADCAST") ? "7000" : "8000";
         JTextField txtPort = new JTextField(defaultPort, 6);
+        txtPort.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        txtPort.setForeground(C_TEXT);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtPort, gbc);
 
-        // 4. IP đích (Multicast Group IP hoặc Broadcast Subnet IP)
+        // 4. IP đích
         gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0;
         JLabel lblDest = new JLabel(mode.equals("MULTICAST") ? "Nhóm Multicast IP:" : "Broadcast IP:");
+        lblDest.setFont(new Font("SansSerif", Font.BOLD, 12));
+        lblDest.setForeground(C_TEXT);
         cfg.add(lblDest, gbc);
 
-        // Broadcast: lấy subnet broadcast của card đã chọn (vd 192.168.137.255)
         String initialDest = "239.1.1.1";
         if (mode.equals("BROADCAST")) {
             if (!cards.isEmpty() && cards.get(0).broadcastIp != null) {
@@ -161,10 +192,11 @@ public class NetworkDemo {
             }
         }
         JTextField txtDest = new JTextField(initialDest, 14);
+        txtDest.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        txtDest.setForeground(C_TEXT);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtDest, gbc);
 
-        // Khi người dùng đổi card mạng trong combobox, tự cập nhật broadcast IP
         cbCards.addActionListener(e -> {
             if (mode.equals("BROADCAST")) {
                 NetworkHelper.CardInfo sel = (NetworkHelper.CardInfo) cbCards.getSelectedItem();
@@ -176,17 +208,23 @@ public class NetworkDemo {
 
         // 5. Tin nhắn ban đầu
         gbc.gridx = 0; gbc.gridy = 4; gbc.weightx = 0;
-        cfg.add(new JLabel("Tin nhắn (Sender):"), gbc);
+        JLabel lblMsg = new JLabel("Tin nhắn (Sender):");
+        lblMsg.setFont(new Font("SansSerif", Font.BOLD, 12));
+        lblMsg.setForeground(C_TEXT);
+        cfg.add(lblMsg, gbc);
+
         JTextField txtMsg = new JTextField("Xin chào từ " + System.getProperty("user.name", "user"), 20);
+        txtMsg.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        txtMsg.setForeground(C_TEXT);
         gbc.gridx = 1; gbc.weightx = 1.0;
         cfg.add(txtMsg, gbc);
 
         root.add(cfg, BorderLayout.CENTER);
 
         // Buttons bottom
-        JButton btnSender   = bigButton("📤 SENDER",   "<html><center>Gửi tin / Send</center></html>",   C_SENDER);
-        JButton btnReceiver = bigButton("📥 RECEIVER", "<html><center>Nhận tin / Receive</center></html>", C_RECEIVER);
-        JButton btnBack     = smallButton("← Quay lại", Color.GRAY);
+        JButton btnSender   = bigButton("📤 SENDER",   "Gửi tin nhắn / Send",   C_SENDER, B_SENDER);
+        JButton btnReceiver = bigButton("📥 RECEIVER", "Nhận tin nhắn / Receive", C_RECEIVER, B_RECEIVER);
+        JButton btnBack     = smallButton("← Quay lại", new Color(0xEEEEEE), new Color(0x757575));
 
         JPanel btns = new JPanel(new GridLayout(1, 2, 14, 0));
         btns.setBackground(C_BG);
@@ -201,7 +239,7 @@ public class NetworkDemo {
 
         frame.setContentPane(root);
 
-        // ── Action: SENDER ──────────────────────────────────────────────────
+        // Action: SENDER
         btnSender.addActionListener(e -> {
             String port = txtPort.getText().trim();
             String nick = txtNick.getText().trim();
@@ -222,7 +260,7 @@ public class NetworkDemo {
             }
         });
 
-        // ── Action: RECEIVER ────────────────────────────────────────────────
+        // Action: RECEIVER
         btnReceiver.addActionListener(e -> {
             String port = txtPort.getText().trim();
             String nick = txtNick.getText().trim();
@@ -253,24 +291,30 @@ public class NetworkDemo {
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════════════
 
-    static JButton bigButton(String title, String subtitle, Color bg) {
-        JButton btn = new JButton("<html><center><b>" + title + "</b><br>" + subtitle + "</center></html>");
+    static JButton bigButton(String title, String subtitle, Color bg, Color border) {
+        JButton btn = new JButton("<html><center><b style='color:#000000; font-size:13px;'>" + title + "</b><br><span style='color:#000000; font-size:11px;'>" + subtitle + "</span></center></html>");
         btn.setBackground(bg);
         btn.setForeground(C_TEXT);
         btn.setFont(new Font("SansSerif", Font.BOLD, 13));
         btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border, 2),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         btn.setOpaque(true);
         btn.setPreferredSize(new Dimension(230, 95));
         return btn;
     }
 
-    static JButton smallButton(String text, Color bg) {
+    static JButton smallButton(String text, Color bg, Color border) {
         JButton btn = new JButton(text);
         btn.setBackground(bg);
         btn.setForeground(C_TEXT);
+        btn.setFont(new Font("SansSerif", Font.BOLD, 12));
         btn.setFocusPainted(false);
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border, 1),
+                BorderFactory.createEmptyBorder(5, 12, 5, 12)));
         btn.setOpaque(true);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return btn;

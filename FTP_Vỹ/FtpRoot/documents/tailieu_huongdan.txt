@@ -1,0 +1,4 @@
+HƯỚNG DẪN KIỂM THỬ HỆ THỐNG FTP JAVA (RFC 959)
+1. Kết nối với tài khoản: student / 123456 hoặc admin / admin.
+2. Thử nghiệm xem danh sách với LIST, chuyển thư mục CWD /documents và quay lại bằng CDUP.
+3. Thử nghiệm tải về report.pdf hoặc tải lên tập tin mới.

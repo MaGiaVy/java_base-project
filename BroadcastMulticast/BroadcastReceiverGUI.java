@@ -6,39 +6,43 @@ import java.nio.charset.StandardCharsets;
 /**
  * BroadcastReceiverGUI.java
  * Nhận broadcast trên cổng đã chỉ định.
- * Không cần joinGroup, mở socket trên cổng và bind đúng interface/mọi interface.
+ * Toàn bộ chữ đen trên nền pastel có viền rõ nét.
  */
 public class BroadcastReceiverGUI {
 
-    static JTextArea log;
-    static volatile boolean running = false;
-    static DatagramSocket socket;
-    static NetworkHelper.CardInfo card;
+    private JTextArea log;
+    private volatile boolean running = false;
+    private DatagramSocket socket;
+    private NetworkHelper.CardInfo card;
 
     public static void launch(String nickname, int port) {
         launch(nickname, port, null);
     }
 
     public static void launch(String nickname, int port, String targetCardOrIP) {
+        new BroadcastReceiverGUI().createAndShow(nickname, port, targetCardOrIP);
+    }
+
+    public void createAndShow(String nickname, int port, String targetCardOrIP) {
         try {
-            card = NetworkHelper.pickCard(targetCardOrIP);
+            this.card = NetworkHelper.pickCard(targetCardOrIP);
         } catch (Exception ignored) {}
 
         JFrame frame = new JFrame("📢 Broadcast RECEIVER  [Port:" + port + "]");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(680, 480);
+        frame.setSize(700, 500);
         frame.setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        root.setBackground(new Color(0xE8F5E9));
+        root.setBackground(new Color(0xF4F6F9));
 
         // Info label
         String cardStr = card != null ? card.displayName + " (" + card.ip + ")" : "Mọi card";
         JLabel info = new JLabel(
-                "<html><b>Broadcast Receiver</b> &nbsp;|&nbsp; Nick: <b>" + nickname + "</b>" +
-                " &nbsp;|&nbsp; Lắng nghe cổng: <b>" + port + "</b>" +
-                "<br><small>Card ưu tiên: <b>" + cardStr + "</b> (nhận mọi broadcast tới cổng này)</small></html>");
+                "<html><b style='color:#000000;'>Broadcast Receiver</b> &nbsp;|&nbsp; Nick: <b style='color:#000000;'>" + nickname + "</b>" +
+                " &nbsp;|&nbsp; Lắng nghe cổng: <b style='color:#000000;'>" + port + "</b>" +
+                "<br><small style='color:#000000;'>Card ưu tiên: <b>" + cardStr + "</b> (nhận mọi broadcast tới cổng này)</small></html>");
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
         root.add(info, BorderLayout.NORTH);
 
@@ -46,24 +50,49 @@ public class BroadcastReceiverGUI {
         log = new JTextArea();
         log.setEditable(false);
         log.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        log.setBackground(new Color(0xFAFAFA));
+        log.setForeground(Color.BLACK);
+        log.setBackground(Color.WHITE);
         JScrollPane scroll = new JScrollPane(log);
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(0x607D8B), 1));
         root.add(scroll, BorderLayout.CENTER);
 
         // Bottom row
         JButton btnStart = new JButton("▶ Bắt đầu nhận / Start");
+        btnStart.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnStart.setForeground(Color.BLACK);
+        btnStart.setBackground(new Color(0xC8E6C9)); // Xanh lá pastel
+        btnStart.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0x2E7D32), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnStart.setOpaque(true);
+        btnStart.setFocusPainted(false);
+        btnStart.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
         JButton btnStop  = new JButton("⏹ Dừng / Stop");
-        JButton btnClear = new JButton("🗑 Xóa log");
-        btnStart.setBackground(new Color(0x2E7D32));
-        btnStart.setForeground(Color.WHITE);
-        btnStart.setOpaque(true); btnStart.setFocusPainted(false);
-        btnStop.setBackground(new Color(0xC62828));
-        btnStop.setForeground(Color.WHITE);
-        btnStop.setOpaque(true); btnStop.setFocusPainted(false);
+        btnStop.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnStop.setForeground(Color.BLACK);
+        btnStop.setBackground(new Color(0xFFCDD2)); // Đỏ pastel
+        btnStop.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xC62828), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnStop.setOpaque(true);
+        btnStop.setFocusPainted(false);
         btnStop.setEnabled(false);
+        btnStop.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        JButton btnClear = new JButton("🗑 Xóa log");
+        btnClear.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnClear.setForeground(Color.BLACK);
+        btnClear.setBackground(new Color(0xEEEEEE)); // Xám pastel
+        btnClear.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0x757575), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnClear.setOpaque(true);
+        btnClear.setFocusPainted(false);
+        btnClear.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JPanel btmPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        btmPanel.setBackground(new Color(0xE8F5E9));
+        btmPanel.setBackground(new Color(0xF4F6F9));
         btmPanel.add(btnStart);
         btmPanel.add(btnStop);
         btmPanel.add(btnClear);
@@ -92,7 +121,7 @@ public class BroadcastReceiverGUI {
         });
     }
 
-    static void startReceiving(int port) {
+    private void startReceiving(int port) {
         running = true;
         appendLog("[OK] Bắt đầu lắng nghe Broadcast tại cổng " + port + "...");
         if (card != null) {
@@ -104,7 +133,6 @@ public class BroadcastReceiverGUI {
             try {
                 socket = new DatagramSocket(null);
                 socket.setReuseAddress(true);
-                // Bind wildcard 0.0.0.0 để nhận broadcast từ bất kỳ card nào (kể cả hotspot)
                 socket.bind(new InetSocketAddress(port));
                 socket.setBroadcast(true);
 
@@ -128,12 +156,12 @@ public class BroadcastReceiverGUI {
         t.start();
     }
 
-    static void stopReceiving() {
+    private void stopReceiving() {
         running = false;
         if (socket != null && !socket.isClosed()) socket.close();
     }
 
-    static void appendLog(String text) {
+    private void appendLog(String text) {
         SwingUtilities.invokeLater(() -> {
             log.append(text + "\n");
             log.setCaretPosition(log.getDocument().getLength());

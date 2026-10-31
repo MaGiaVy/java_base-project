@@ -1,0 +1,3 @@
+public enum ReceiveProtocol {
+    POP3, IMAP
+}

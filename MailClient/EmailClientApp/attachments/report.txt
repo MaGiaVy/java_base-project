@@ -1,0 +1,4 @@
+Báo cáo kết quả thử nghiệm - Ứng dụng Mail Client Java
+Trường Đại học Sài Gòn (SGU)
+Khoa Công Nghệ Thông Tin
+Môn: Lập Trình Mạng

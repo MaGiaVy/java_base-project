@@ -1,0 +1,97 @@
+#include <stdio.h>
+#include "khaibaops.h"
+#include "tinhtoanps.h"
+
+// Cấu trúc hỗn số
+typedef struct {
+    int nguyen;
+    PhanSo ps;
+} HonSo;
+
+// Hàm đổi hỗn số sang phân số
+PhanSo honSoToPhanSo(HonSo hs) {
+    PhanSo ps;
+    ps.tu = hs.nguyen * hs.ps.mau + hs.ps.tu;
+    ps.mau = hs.ps.mau;
+    rutGon(&ps);
+    return ps;
+}
+
+// Hàm nhập hỗn số
+void nhapHonSo(HonSo *hs) {
+    printf("Nhap phan nguyen: ");
+    scanf("%d", &hs->nguyen);
+    printf("Nhap phan so:\n");
+    nhapPhanSo(&hs->ps);
+}
+
+// Hàm xuất hỗn số
+void xuatHonSo(HonSo hs) {
+    printf("%d %d/%d", hs.nguyen, hs.ps.tu, hs.ps.mau);
+}
+
+int main() {
+    HonSo hs1, hs2;
+    PhanSo ps1, ps2, kq;
+
+    // Nhập hai hỗn số
+    printf("Nhap hon so thu nhat:\n");
+    nhapHonSo(&hs1);
+    printf("Nhap hon so thu hai:\n");
+    nhapHonSo(&hs2);
+
+    // Xuất hai hỗn số
+    printf("\nHon so thu nhat: ");
+    xuatHonSo(hs1);
+    printf("\nHon so thu hai: ");
+    xuatHonSo(hs2);
+
+    // Chuyển hỗn số sang phân số
+    ps1 = honSoToPhanSo(hs1);
+    ps2 = honSoToPhanSo(hs2);
+
+    // Thực hiện các phép toán
+    printf("\n\nKet qua cac phep toan:\n");
+
+    // Cộng
+    kq = congPhanSo(ps1, ps2);
+    printf("Cong: ");
+    xuatPhanSo(ps1);
+    printf(" + ");
+    xuatPhanSo(ps2);
+    printf(" = ");
+    xuatPhanSo(kq);
+    printf("\n");
+
+    // Trừ
+    kq = truPhanSo(ps1, ps2);
+    printf("Tru: ");
+    xuatPhanSo(ps1);
+    printf(" - ");
+    xuatPhanSo(ps2);
+    printf(" = ");
+    xuatPhanSo(kq);
+    printf("\n");
+
+    // Nhân
+    kq = nhanPhanSo(ps1, ps2);
+    printf("Nhan: ");
+    xuatPhanSo(ps1);
+    printf(" * ");
+    xuatPhanSo(ps2);
+    printf(" = ");
+    xuatPhanSo(kq);
+    printf("\n");
+
+    // Chia
+    kq = chiaPhanSo(ps1, ps2);
+    printf("Chia: ");
+    xuatPhanSo(ps1);
+    printf(" / ");
+    xuatPhanSo(ps2);
+    printf(" = ");
+    xuatPhanSo(kq);
+    printf("\n");
+
+    return 0;
+}

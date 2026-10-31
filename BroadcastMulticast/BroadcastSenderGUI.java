@@ -7,49 +7,52 @@ import java.util.*;
 /**
  * BroadcastSenderGUI.java
  * Gửi broadcast tới mạng LAN / Hotspot.
- * Hỗ trợ tự tính và điền sẵn địa chỉ directed broadcast (vd 192.168.137.255 cho Mobile Hotspot).
+ * Toàn bộ chữ đen trên nền pastel có viền rõ ràng.
  */
 public class BroadcastSenderGUI {
 
-    static JTextArea log;
-    static DatagramSocket socket;
-    static String broadcastIP;
-    static int port;
-    static String nick;
-    static NetworkHelper.CardInfo card;
+    private JTextArea log;
+    private DatagramSocket socket;
+    private String broadcastIP;
+    private int port;
+    private String nick;
+    private NetworkHelper.CardInfo card;
 
     public static void launch(String nickname, String bcastIP, int p, String initMsg) {
         launch(nickname, bcastIP, p, initMsg, null);
     }
 
     public static void launch(String nickname, String bcastIP, int p, String initMsg, String targetCardOrIP) {
-        nick = nickname;
-        port = p;
-        broadcastIP = bcastIP;
+        new BroadcastSenderGUI().createAndShow(nickname, bcastIP, p, initMsg, targetCardOrIP);
+    }
+
+    public void createAndShow(String nickname, String bcastIP, int p, String initMsg, String targetCardOrIP) {
+        this.nick = nickname;
+        this.port = p;
+        this.broadcastIP = bcastIP;
 
         try {
-            card = NetworkHelper.pickCard(targetCardOrIP);
-            // Nếu người dùng để 255.255.255.255 mà card có subnet broadcast riêng (vd 192.168.137.255), gợi ý dùng subnet broadcast
+            this.card = NetworkHelper.pickCard(targetCardOrIP);
             if ((broadcastIP == null || broadcastIP.equals("255.255.255.255")) && card != null && card.broadcastIp != null) {
-                broadcastIP = card.broadcastIp;
+                this.broadcastIP = card.broadcastIp;
             }
         } catch (Exception ignored) {}
 
         JFrame frame = new JFrame("📢 Broadcast SENDER  [" + broadcastIP + ":" + p + "]");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(680, 500);
+        frame.setSize(700, 520);
         frame.setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        root.setBackground(new Color(0xE3F2FD));
+        root.setBackground(new Color(0xF4F6F9));
 
         // Info label
         String cardStr = card != null ? card.displayName + " (" + card.ip + ")" : "Mặc định";
         JLabel info = new JLabel(
-                "<html><b>Broadcast Sender</b> &nbsp;|&nbsp; Nick: <b>" + nickname + "</b>" +
-                " &nbsp;|&nbsp; Gửi tới: <b>" + broadcastIP + ":" + p + "</b>" +
-                "<br><small>Card mạng: <b>" + cardStr + "</b> | DatagramSocket.setBroadcast(true)</small></html>");
+                "<html><b style='color:#000000;'>Broadcast Sender</b> &nbsp;|&nbsp; Nick: <b style='color:#000000;'>" + nickname + "</b>" +
+                " &nbsp;|&nbsp; Gửi tới: <b style='color:#000000;'>" + broadcastIP + ":" + p + "</b>" +
+                "<br><small style='color:#000000;'>Card mạng: <b>" + cardStr + "</b> | DatagramSocket.setBroadcast(true)</small></html>");
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
         root.add(info, BorderLayout.NORTH);
 
@@ -57,26 +60,44 @@ public class BroadcastSenderGUI {
         log = new JTextArea();
         log.setEditable(false);
         log.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        log.setBackground(new Color(0xFAFAFA));
+        log.setForeground(Color.BLACK);
+        log.setBackground(Color.WHITE);
         JScrollPane scroll = new JScrollPane(log);
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(0x607D8B), 1));
         root.add(scroll, BorderLayout.CENTER);
 
         // Input row
         JTextField txtMsg = new JTextField(initMsg);
+        txtMsg.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        txtMsg.setForeground(Color.BLACK);
+
         JButton btnSend = new JButton("📤 Gửi / Send");
+        btnSend.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnSend.setForeground(Color.BLACK);
+        btnSend.setBackground(new Color(0xFFE0B2)); // Cam pastel
+        btnSend.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xE65100), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnSend.setOpaque(true);
+        btnSend.setFocusPainted(false);
+        btnSend.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
         JButton btnSendAll = new JButton("📡 Gửi tất cả card");
-        btnSend.setBackground(new Color(0xE65100));
-        btnSend.setForeground(Color.WHITE);
-        btnSend.setOpaque(true); btnSend.setFocusPainted(false);
-        btnSendAll.setBackground(new Color(0x1565C0));
-        btnSendAll.setForeground(Color.WHITE);
-        btnSendAll.setOpaque(true); btnSendAll.setFocusPainted(false);
+        btnSendAll.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnSendAll.setForeground(Color.BLACK);
+        btnSendAll.setBackground(new Color(0xBBDEFB)); // Xanh dương pastel
+        btnSendAll.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0x1565C0), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnSendAll.setOpaque(true);
+        btnSendAll.setFocusPainted(false);
+        btnSendAll.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JPanel inputRow = new JPanel(new BorderLayout(6, 0));
-        inputRow.setBackground(new Color(0xE3F2FD));
+        inputRow.setBackground(new Color(0xF4F6F9));
         inputRow.add(txtMsg, BorderLayout.CENTER);
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        btnRow.setBackground(new Color(0xE3F2FD));
+        btnRow.setBackground(new Color(0xF4F6F9));
         btnRow.add(btnSendAll);
         btnRow.add(btnSend);
         inputRow.add(btnRow, BorderLayout.EAST);
@@ -132,13 +153,13 @@ public class BroadcastSenderGUI {
         });
     }
 
-    static void sendTo(String ip, int p, String msg) throws Exception {
+    private void sendTo(String ip, int p, String msg) throws Exception {
         byte[] data = msg.getBytes(StandardCharsets.UTF_8);
         InetAddress addr = InetAddress.getByName(ip);
         socket.send(new DatagramPacket(data, data.length, addr, p));
     }
 
-    static int sendToAllInterfaces(int p, String msg) throws Exception {
+    private int sendToAllInterfaces(int p, String msg) throws Exception {
         byte[] data = msg.getBytes(StandardCharsets.UTF_8);
         int sent = 0;
         for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
@@ -155,7 +176,7 @@ public class BroadcastSenderGUI {
         return sent;
     }
 
-    static void appendLog(String text) {
+    private void appendLog(String text) {
         SwingUtilities.invokeLater(() -> {
             log.append(text + "\n");
             log.setCaretPosition(log.getDocument().getLength());

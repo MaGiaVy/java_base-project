@@ -1,0 +1,3 @@
+Đây là tập tin mẫu nằm trên máy Client (FtpClientLocal).
+Dùng để kiểm thử lệnh STOR (Upload) từ Java Client lên FTP Server (Java hoặc IIS).
+Kích thước nhỏ, truyền dữ liệu qua Data Socket trong Passive Mode (PASV).

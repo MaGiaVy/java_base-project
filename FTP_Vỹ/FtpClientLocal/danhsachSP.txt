@@ -1,0 +1,3 @@
+GH01,Trong,200,200000,go
+GH02,Sao,300,140000,hoi
+KN19,Guitar,200,1500000,day

@@ -6,39 +6,43 @@ import java.nio.charset.StandardCharsets;
 /**
  * MulticastSenderGUI.java
  * Gửi multicast tới địa chỉ nhóm lớp D.
- * Tự động ưu tiên card Mobile Hotspot (192.168.137.x).
+ * Toàn bộ chữ đen trên nền pastel có viền rõ ràng.
  */
 public class MulticastSenderGUI {
 
-    static JTextArea log;
-    static MulticastSocket socket;
-    static NetworkHelper.CardInfo card;
-    static InetAddress groupAddr;
-    static int port;
-    static String nick;
+    private JTextArea log;
+    private MulticastSocket socket;
+    private NetworkHelper.CardInfo card;
+    private InetAddress groupAddr;
+    private int port;
+    private String nick;
 
     public static void launch(String nickname, String groupIP, int p, String initMsg) {
         launch(nickname, groupIP, p, initMsg, null);
     }
 
     public static void launch(String nickname, String groupIP, int p, String initMsg, String targetCardOrIP) {
-        nick = nickname;
-        port = p;
+        new MulticastSenderGUI().createAndShow(nickname, groupIP, p, initMsg, targetCardOrIP);
+    }
+
+    public void createAndShow(String nickname, String groupIP, int p, String initMsg, String targetCardOrIP) {
+        this.nick = nickname;
+        this.port = p;
 
         JFrame frame = new JFrame("📡 Multicast SENDER  [" + groupIP + ":" + p + "]");
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(680, 520);
+        frame.setSize(700, 520);
         frame.setLocationRelativeTo(null);
 
         JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        root.setBackground(new Color(0xFFF3E0));
+        root.setBackground(new Color(0xF4F6F9));
 
         // Info label
         JLabel info = new JLabel(
-                "<html><b>Multicast Sender</b> &nbsp;|&nbsp; Nick: <b>" + nickname + "</b>" +
-                " &nbsp;|&nbsp; Nhóm: <b>" + groupIP + ":" + p + "</b>" +
-                "<br><small>MulticastSocket + setTimeToLive(1) — phát cho thành viên đã joinGroup</small></html>");
+                "<html><b style='color:#000000;'>Multicast Sender</b> &nbsp;|&nbsp; Nick: <b style='color:#000000;'>" + nickname + "</b>" +
+                " &nbsp;|&nbsp; Nhóm: <b style='color:#000000;'>" + groupIP + ":" + p + "</b>" +
+                "<br><small style='color:#000000;'>MulticastSocket + setTimeToLive(1) — phát cho thành viên đã joinGroup</small></html>");
         info.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
         root.add(info, BorderLayout.NORTH);
 
@@ -46,18 +50,30 @@ public class MulticastSenderGUI {
         log = new JTextArea();
         log.setEditable(false);
         log.setFont(new Font("Monospaced", Font.PLAIN, 13));
-        log.setBackground(new Color(0xFAFAFA));
-        root.add(new JScrollPane(log), BorderLayout.CENTER);
+        log.setForeground(Color.BLACK);
+        log.setBackground(Color.WHITE);
+        JScrollPane scroll = new JScrollPane(log);
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(0x607D8B), 1));
+        root.add(scroll, BorderLayout.CENTER);
 
         // Input row
         JTextField txtMsg = new JTextField(initMsg);
+        txtMsg.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        txtMsg.setForeground(Color.BLACK);
+
         JButton btnSend  = new JButton("📤 Gửi tới nhóm / Send to group");
-        btnSend.setBackground(new Color(0xE65100));
-        btnSend.setForeground(Color.WHITE);
-        btnSend.setOpaque(true); btnSend.setFocusPainted(false);
+        btnSend.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btnSend.setForeground(Color.BLACK);
+        btnSend.setBackground(new Color(0xFFE0B2)); // Cam pastel
+        btnSend.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xE65100), 1),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+        btnSend.setOpaque(true);
+        btnSend.setFocusPainted(false);
+        btnSend.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JPanel inputRow = new JPanel(new BorderLayout(6, 0));
-        inputRow.setBackground(new Color(0xFFF3E0));
+        inputRow.setBackground(new Color(0xF4F6F9));
         inputRow.add(txtMsg, BorderLayout.CENTER);
         inputRow.add(btnSend, BorderLayout.EAST);
         root.add(inputRow, BorderLayout.SOUTH);
@@ -104,7 +120,7 @@ public class MulticastSenderGUI {
         });
     }
 
-    static void appendLog(String text) {
+    private void appendLog(String text) {
         SwingUtilities.invokeLater(() -> {
             log.append(text + "\n");
             log.setCaretPosition(log.getDocument().getLength());
