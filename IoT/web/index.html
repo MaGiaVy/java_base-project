@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Smart Monitoring & Control System</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- MQTT.js qua CDN (hỗ trợ WebSocket) -->
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+  <!-- Chart.js qua CDN cho biểu đồ thời gian thực -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <h1>IoT Smart Monitoring & Control</h1>
+          <p class="subtitle">Hệ thống Giám Sát Cảm Biến & Điều Khiển Thiết Bị Qua MQTT</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div id="connectionStatus" class="status-badge disconnected">
+          <span class="status-dot"></span>
+          <span class="status-text">Chưa kết nối</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Broker Connection Settings -->
+    <section class="card settings-card">
+      <div class="settings-header">
+        <h2>🌐 Thiết Lập Kết Nối Broker</h2>
+        <div class="preset-buttons">
+          <button id="btnLocalProfile" class="btn btn-outline active">Local Mosquitto (ws://localhost:9001)</button>
+          <button id="btnPublicProfile" class="btn btn-outline">Public EMQX (wss://broker.emqx.io:8084/mqtt)</button>
+        </div>
+      </div>
+      <div class="settings-form">
+        <div class="form-group">
+          <label for="brokerUrl">WebSocket URL:</label>
+          <input type="text" id="brokerUrl" value="ws://localhost:9001" placeholder="ws://localhost:9001">
+        </div>
+        <div class="form-group">
+          <label for="brokerUsername">Username:</label>
+          <input type="text" id="brokerUsername" value="user1" placeholder="user1">
+        </div>
+        <div class="form-group">
+          <label for="brokerPassword">Password:</label>
+          <input type="password" id="brokerPassword" value="123" placeholder="123">
+        </div>
+        <div class="form-actions">
+          <button id="btnConnect" class="btn btn-primary">Kết Nối</button>
+          <button id="btnDisconnect" class="btn btn-danger" disabled>Ngắt Kết Nối</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Grid: Gauges & Controls -->
+    <div class="main-grid">
+      <!-- Temperature Gauge Card -->
+      <section class="card gauge-card">
+        <div class="card-title">
+          <span class="icon">🌡️</span>
+          <h3>Nhiệt Độ (Temperature)</h3>
+        </div>
+        <div class="gauge-wrapper">
+          <canvas id="tempGauge" width="220" height="220"></canvas>
+          <div class="gauge-center-text">
+            <span id="tempValue" class="value-text">--.-</span>
+            <span class="unit-text">°C</span>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="min-label">0 °C</span>
+          <span class="threshold-label">Ngưỡng: &gt; 35°C</span>
+          <span class="max-label">100 °C</span>
+        </div>
+      </section>
+
+      <!-- Humidity Gauge Card -->
+      <section class="card gauge-card">
+        <div class="card-title">
+          <span class="icon">💧</span>
+          <h3>Độ Ẩm (Humidity)</h3>
+        </div>
+        <div class="gauge-wrapper">
+          <canvas id="humGauge" width="220" height="220"></canvas>
+          <div class="gauge-center-text">
+            <span id="humValue" class="value-text">--.-</span>
+            <span class="unit-text">%</span>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="min-label">0 %</span>
+          <span class="threshold-label">Dải chuẩn: 40-70%</span>
+          <span class="max-label">100 %</span>
+        </div>
+      </section>
+
+      <!-- Device Control Card -->
+      <section class="card control-card">
+        <div class="card-title">
+          <span class="icon">💡</span>
+          <h3>Điều Khiển Đèn LED (ESP32)</h3>
+        </div>
+        <div class="control-body">
+          <div class="led-indicator-wrapper">
+            <div id="ledVisual" class="led-bulb off"></div>
+            <div class="led-state-label">Trạng thái: <strong id="ledStatusText">TẮT (OFF)</strong></div>
+          </div>
+          <div class="switch-container">
+            <label class="switch">
+              <input type="checkbox" id="ledToggle">
+              <span class="slider round"></span>
+            </label>
+            <span class="switch-hint">Gạt để BẬT / TẮT</span>
+          </div>
+          <div class="quick-btn-group">
+            <button id="btnTurnOn" class="btn btn-success">BẬT ĐÈN (ON)</button>
+            <button id="btnTurnOff" class="btn btn-secondary">TẮT ĐÈN (OFF)</button>
+          </div>
+        </div>
+        <div class="control-footer">
+          <small>Topic: <code>esp32/led/command</code></small>
+        </div>
+      </section>
+    </div>
+
+    <!-- Live Chart Section -->
+    <section class="card chart-card">
+      <div class="chart-header">
+        <div class="card-title">
+          <span class="icon">📈</span>
+          <h3>Biểu Đồ Biến Thiên Thời Gian Thực</h3>
+        </div>
+        <div class="chart-legend-custom">
+          <span class="legend-item"><span class="legend-color temp-col"></span> Nhiệt Độ (°C)</span>
+          <span class="legend-item"><span class="legend-color hum-col"></span> Độ Ẩm (%)</span>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Message Logs Section -->
+    <section class="card logs-card">
+      <div class="logs-header">
+        <div class="card-title">
+          <span class="icon">📜</span>
+          <h3>Nhật Ký Thông Điệp MQTT Nhận Được</h3>
+        </div>
+        <button id="btnClearLogs" class="btn btn-outline btn-sm">Xóa Nhật Ký</button>
+      </div>
+      <div class="table-wrapper">
+        <table id="logTable" class="log-table">
+          <thead>
+            <tr>
+              <th style="width: 120px;">Thời Gian</th>
+              <th style="width: 240px;">Topic</th>
+              <th>Nội Dung Payload</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            <tr class="empty-row">
+              <td colspan="3">Chưa có thông điệp nào nhận được...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Hệ thống IoT - Trường Đại Học Sài Gòn (SGU) | Kiến trúc Wokwi ESP32 + Mosquitto + Web Dashboard + Java Client</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
