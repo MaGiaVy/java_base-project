@@ -1,26 +1,28 @@
 @echo off
-chcp 65001 >nul
-echo ========================================================
-echo   BIÊN DỊCH VÀ KHỞI CHẠY ỨNG DỤNG JAVA IOT CLIENT
-echo ========================================================
-echo.
-
-set JAVA_DIR=%~dp0
-cd /d "%JAVA_DIR%"
+cd /d "%~dp0"
+title IoT Smart Monitoring - Java Client
 
 if not exist "bin" mkdir bin
 
-echo [1/2] Đang biên dịch mã nguồn Java...
-javac -encoding UTF-8 -cp "lib/*" -d bin src/com/iot/*.java
+echo ========================================================
+echo   COMPILING AND LAUNCHING JAVA IOT CLIENT
+echo ========================================================
+echo.
+echo [1/2] Dang bien dich ma nguon Java...
+
+javac -encoding UTF-8 -cp "lib/org.eclipse.paho.client.mqttv3-1.2.5.jar" -d bin src/com/iot/MqttManager.java src/com/iot/MainFrame.java src/com/iot/App.java
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [LỖI] Quá trình biên dịch Java thất bại!
+    echo [LOI] Bien dich Java that bai! Kiem tra lai JDK tren may.
     pause
     exit /b %ERRORLEVEL%
 )
 
-echo [2/2] Biên dịch thành công! Đang khởi chạy giao diện Swing Client...
-start "" javaw -cp "bin;lib/*" com.iot.App
+echo.
+echo [2/2] Bien dich thanh cong! Dang khoi chay giao dien...
+start "IoT Java Client" java -cp "bin;lib/org.eclipse.paho.client.mqttv3-1.2.5.jar" com.iot.App
 
-echo [HOÀN TẤT] Ứng dụng Java Client đã được mở.
+echo.
+echo [HOAN TAT] Da khoi chay ung dung Java thanh cong!
+pause
