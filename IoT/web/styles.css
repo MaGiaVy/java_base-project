@@ -838,6 +838,21 @@ body {
   gap: 6px;
 }
 
+.auto-alert-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #38bdf8;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.auto-alert-checkbox input {
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
 /* Switch Toggle Component */
 .switch {
   position: relative;

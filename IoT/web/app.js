@@ -36,6 +36,7 @@ let mqttClient = null;
 let currentTemp = 28.6;
 let currentHum = 62.4;
 let isLedOn = false;
+let isAutoLedMode = true;
 let realTimeChart = null;
 let isAudioEnabled = true;
 let audioCtx = null;
@@ -358,9 +359,17 @@ function updateTelemetry(temp, hum) {
         alertBadge.textContent = '🔥 CẢNH BÁO QUÁ NHIỆT';
         alertBadge.className = 'badge-alert';
         triggerWarningSound();
+        if (isAutoLedMode && !isLedOn) {
+          updateLedUI('ON');
+          appendLog('system/alert', `[Tự động] Nhiệt độ ${tempStr}°C > 35°C -> Bật đèn LED cảnh báo!`);
+        }
       } else {
         alertBadge.textContent = 'Bình thường';
         alertBadge.className = 'badge-normal';
+        if (isAutoLedMode && isLedOn) {
+          updateLedUI('OFF');
+          appendLog('system/normal', `[Tự động] Nhiệt độ ${tempStr}°C hạ nhiệt -> Tắt đèn LED!`);
+        }
       }
     }
     updated = true;
@@ -688,6 +697,14 @@ function initApp() {
   const btnOff = document.getElementById('btnTurnOff');
   if (btnOn) btnOn.addEventListener('click', () => sendLedCommand('ON'));
   if (btnOff) btnOff.addEventListener('click', () => sendLedCommand('OFF'));
+
+  const chkAuto = document.getElementById('chkAutoLed');
+  if (chkAuto) {
+    chkAuto.addEventListener('change', (e) => {
+      isAutoLedMode = e.target.checked;
+      appendLog('system/config', `Chế độ tự động bật đèn theo nhiệt độ: ${isAutoLedMode ? 'BẬT' : 'TẮT'}`);
+    });
+  }
 
   // 5. Nút chuyển cấu hình Profile
   const btnLocal = document.getElementById('btnLocalProfile');
