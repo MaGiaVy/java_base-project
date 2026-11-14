@@ -124,7 +124,7 @@ void setup() {
   // Kết nối Wi-Fi
   Serial.print("[WIFI] Đang kết nối tới ");
   Serial.println(ssid);
-  WiFi.begin(ssid, password);
+  WiFi.begin(ssid, password, 6);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");

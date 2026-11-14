@@ -269,17 +269,9 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
         btnLedOn.addActionListener(e -> sendLedCommand("ON"));
         btnLedOff.addActionListener(e -> sendLedCommand("OFF"));
 
-        btnLocal.addActionListener(e -> {
-            txtBrokerUrl.setText("tcp://localhost:1883");
-            txtUsername.setText("user1");
-            txtPassword.setText("123");
-        });
+        btnLocal.addActionListener(e -> switchProfile("tcp://localhost:1883", "user1", "123"));
 
-        btnPublic.addActionListener(e -> {
-            txtBrokerUrl.setText("tcp://broker.emqx.io:1883");
-            txtUsername.setText("");
-            txtPassword.setText("");
-        });
+        btnPublic.addActionListener(e -> switchProfile("tcp://broker.emqx.io:1883", "", ""));
 
         btnExportCsv.addActionListener(e -> exportToCsv());
         btnClearLogs.addActionListener(e -> tableModel.setRowCount(0));
@@ -297,6 +289,16 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
         lblCardTitle.setForeground(new Color(148, 163, 184));
         card.add(lblCardTitle, BorderLayout.NORTH);
         return card;
+    }
+
+    private void switchProfile(String url, String username, String password) {
+        txtBrokerUrl.setText(url);
+        txtUsername.setText(username);
+        txtPassword.setText(password);
+        if (mqttManager.isConnected()) {
+            disconnectBroker();
+        }
+        connectBroker();
     }
 
     private void connectBroker() {

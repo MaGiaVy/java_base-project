@@ -69,6 +69,8 @@ public class NetworkHelper {
                     // 1. IP mạng hotspot Windows mặc định: 192.168.137.x
                     // 2. Tên chứa "wi-fi direct", "hotspot", hoặc "local area connection*" (nhưng không phải vmware)
                     boolean isHotspot = ip.startsWith("192.168.137.")
+                            || ip.startsWith("172.20.10.")
+                            || ip.startsWith("192.168.43.")
                             || dName.contains("wi-fi direct")
                             || dName.contains("hotspot")
                             || (dName.contains("local area connection*") && !isBadVirtual);

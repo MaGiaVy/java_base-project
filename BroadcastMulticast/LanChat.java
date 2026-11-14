@@ -63,6 +63,7 @@ public class LanChat {
     private final String hostName;
     private final List<NetworkInterface> ifaces;
     private final List<InetAddress> broadcastAddrs;
+    private volatile CardInfo activeCard;
 
     private final MulticastSocket mcSocket;     // nhận + gửi multicast
     private final DatagramSocket bcRecvSocket;  // nhận broadcast cổng 7000
@@ -108,14 +109,54 @@ public class LanChat {
         void onRoomChanged(int newRoom);
     }
 
+    public static class CardInfo {
+        public final NetworkInterface nif;
+        public final String ip;
+        public final String broadcastIp;
+        public final boolean isHotspot;
+        public final String displayName;
+
+        public CardInfo(NetworkInterface nif, String ip, String broadcastIp, boolean isHotspot) {
+            this.nif = nif;
+            this.ip = ip;
+            this.broadcastIp = broadcastIp;
+            this.isHotspot = isHotspot;
+            this.displayName = nif.getDisplayName();
+        }
+
+        @Override
+        public String toString() {
+            String prefix = isHotspot ? "🔥 [HOTSPOT] " : "📶 ";
+            return prefix + ip + " (" + displayName + ")";
+        }
+    }
+
     public LanChat(String name, String ifArg) throws Exception {
         this.name = clean(name);
         this.hostName = clean(InetAddress.getLocalHost().getHostName());
-        this.ifaces = chooseInterfaces(ifArg);
-        this.broadcastAddrs = findBroadcastAddresses(ifaces);
+
+        List<CardInfo> cards = getAvailableCards();
+        if (ifArg != null && !ifArg.trim().isEmpty() && !ifArg.startsWith("-")) {
+            for (CardInfo c : cards) {
+                if (c.ip.equalsIgnoreCase(ifArg) || c.displayName.equalsIgnoreCase(ifArg)
+                        || c.displayName.toLowerCase().contains(ifArg.toLowerCase())) {
+                    this.activeCard = c;
+                    break;
+                }
+            }
+        }
+        if (this.activeCard == null && !cards.isEmpty()) {
+            this.activeCard = cards.get(0); // Ưu tiên Hotspot lên đầu!
+        }
+
+        this.ifaces = chooseInterfaces(activeCard);
+        this.broadcastAddrs = findBroadcastAddresses(activeCard, ifaces);
 
         mcSocket = new MulticastSocket(MC_PORT);
         mcSocket.setTimeToLive(TTL);
+        if (this.activeCard != null && this.activeCard.nif != null) {
+            try { mcSocket.setNetworkInterface(this.activeCard.nif); } catch (Exception ignored) { }
+        }
 
         bcRecvSocket = new DatagramSocket(null);
         bcRecvSocket.setReuseAddress(true);
@@ -123,6 +164,18 @@ public class LanChat {
 
         bcSendSocket = new DatagramSocket();
         bcSendSocket.setBroadcast(true);
+    }
+
+    public CardInfo getActiveCard() { return activeCard; }
+
+    public void setActiveCard(CardInfo card) {
+        if (card != null && card.nif != null) {
+            this.activeCard = card;
+            try {
+                mcSocket.setNetworkInterface(card.nif);
+            } catch (Exception ignored) { }
+            notifySystem("Đã chọn card ưu tiên: " + card.toString(), "INFO");
+        }
     }
 
     public void setListener(ChatListener listener) {
@@ -214,7 +267,14 @@ public class LanChat {
     private synchronized void sendMulticast(String raw, int r) throws Exception {
         byte[] data = raw.getBytes(StandardCharsets.UTF_8);
         InetSocketAddress ep = new InetSocketAddress(InetAddress.getByName(GROUP_PREFIX + r), MC_PORT);
+        if (activeCard != null && activeCard.nif != null) {
+            try {
+                mcSocket.setNetworkInterface(activeCard.nif);
+                mcSocket.send(new DatagramPacket(data, data.length, ep));
+            } catch (Exception ignored) { }
+        }
         for (NetworkInterface ni : ifaces) {
+            if (activeCard != null && ni != null && ni.equals(activeCard.nif)) continue;
             try {
                 if (ni != null) mcSocket.setNetworkInterface(ni);
                 mcSocket.send(new DatagramPacket(data, data.length, ep));
@@ -558,26 +618,85 @@ public class LanChat {
     //                              CARD MẠNG
     // ======================================================================
 
-    /** Mặc định dùng mọi card IPv4 đang bật (tránh gói đi nhầm card ảo WSL/Hyper-V/VirtualBox). */
-    static List<NetworkInterface> chooseInterfaces(String arg) throws Exception {
-        List<NetworkInterface> list = new ArrayList<>();
-        if (arg != null && !arg.trim().isEmpty() && !arg.startsWith("-")) {
-            NetworkInterface ni = NetworkInterface.getByName(arg);
-            if (ni == null) ni = NetworkInterface.getByInetAddress(InetAddress.getByName(arg));
-            if (ni == null) throw new IllegalArgumentException("Không tìm thấy card mạng: " + arg);
-            list.add(ni);
-            return list;
+    public static boolean isHotspot(String ip, String dName) {
+        if (ip != null && (ip.startsWith("192.168.137.") || ip.startsWith("172.20.10.") || ip.startsWith("192.168.43."))) return true;
+        if (dName == null) return false;
+        String s = dName.toLowerCase();
+        if (s.contains("vmware") || s.contains("virtualbox") || s.contains("hyper-v") || s.contains("wsl")) {
+            return false;
         }
-        for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-            if (!ni.isUp() || ni.isLoopback() || !ni.supportsMulticast()) continue;
-            if (Collections.list(ni.getInetAddresses()).stream().anyMatch(a -> a instanceof Inet4Address)) list.add(ni);
+        return s.contains("wi-fi direct") || s.contains("hotspot") || s.contains("local area connection*");
+    }
+
+    public static boolean isBadVirtual(NetworkInterface ni) {
+        if (ni == null) return false;
+        String name = (ni.getName() + " " + ni.getDisplayName()).toLowerCase();
+        String[] bad = {"vmware", "virtualbox", "vethernet", "hyper-v", "docker", "wsl", "tap", "tun", "vpn", "bluetooth", "loopback"};
+        for (String b : bad) {
+            if (name.contains(b)) return true;
+        }
+        return false;
+    }
+
+    public static List<CardInfo> getAvailableCards() {
+        List<CardInfo> list = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces();
+            while (en != null && en.hasMoreElements()) {
+                NetworkInterface ni = en.nextElement();
+                if (!ni.isUp() || ni.isLoopback() || !ni.supportsMulticast()) continue;
+
+                for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    InetAddress addr = ia.getAddress();
+                    if (!(addr instanceof Inet4Address)) continue;
+                    String ip = addr.getHostAddress();
+                    if (ip.startsWith("127.") || ip.startsWith("169.254.")) continue;
+
+                    InetAddress bcast = ia.getBroadcast();
+                    String bcastStr = bcast != null ? bcast.getHostAddress() : "255.255.255.255";
+                    String dName = (ni.getDisplayName() + " " + ni.getName()).toLowerCase();
+
+                    // Nhận diện Hotspot:
+                    // 1. IP mạng hotspot Windows mặc định: 192.168.137.x
+                    // 2. Tên chứa "wi-fi direct", "hotspot", hoặc "local area connection*" (nhưng không phải vmware)
+                    boolean isHs = isHotspot(ip, dName);
+                    list.add(new CardInfo(ni, ip, bcastStr, isHs));
+                }
+            }
+        } catch (Exception ignored) { }
+
+        // Sắp xếp: Hotspot lên đầu -> Wi-Fi thật -> các card khác -> VMware/VirtualBox cuối
+        list.sort((a, b) -> {
+            if (a.isHotspot != b.isHotspot) return a.isHotspot ? -1 : 1;
+            boolean aBad = isBadVirtual(a.nif);
+            boolean bBad = isBadVirtual(b.nif);
+            if (aBad != bBad) return aBad ? 1 : -1;
+            return a.ip.compareTo(b.ip);
+        });
+
+        return list;
+    }
+
+    /** Mặc định ưu tiên Hotspot, sau đó là Wi-Fi/Ethernet và các card IPv4 đang bật. */
+    static List<NetworkInterface> chooseInterfaces(CardInfo primary) {
+        List<NetworkInterface> list = new ArrayList<>();
+        if (primary != null && primary.nif != null) {
+            list.add(primary.nif);
+        }
+        for (CardInfo c : getAvailableCards()) {
+            if (c.nif != null && !list.contains(c.nif)) {
+                list.add(c.nif);
+            }
         }
         if (list.isEmpty()) list.add(null);
         return list;
     }
 
-    static List<InetAddress> findBroadcastAddresses(List<NetworkInterface> ifaces) throws Exception {
+    static List<InetAddress> findBroadcastAddresses(CardInfo primary, List<NetworkInterface> ifaces) {
         List<InetAddress> list = new ArrayList<>();
+        if (primary != null && primary.broadcastIp != null) {
+            try { list.add(InetAddress.getByName(primary.broadcastIp)); } catch (Exception ignored) { }
+        }
         for (NetworkInterface ni : ifaces) {
             if (ni == null) continue;
             for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
@@ -585,7 +704,10 @@ public class LanChat {
                 if (b != null && !list.contains(b)) list.add(b);
             }
         }
-        if (list.isEmpty()) list.add(InetAddress.getByName("255.255.255.255"));
+        try {
+            InetAddress defBcast = InetAddress.getByName("255.255.255.255");
+            if (!list.contains(defBcast)) list.add(defBcast);
+        } catch (Exception ignored) { }
         return list;
     }
 
@@ -760,7 +882,7 @@ public class LanChat {
             topContainer.add(topBar, BorderLayout.NORTH);
 
             // Sub-status bar
-            JPanel subStatusBar = new JPanel(new BorderLayout());
+            JPanel subStatusBar = new JPanel(new BorderLayout(10, 0));
             subStatusBar.setBackground(new Color(0xE0E0E0));
             subStatusBar.setBorder(BorderFactory.createEmptyBorder(4, 12, 4, 12));
 
@@ -768,6 +890,36 @@ public class LanChat {
             lblStatus.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             lblStatus.setForeground(new Color(0x37474F));
             subStatusBar.add(lblStatus, BorderLayout.CENTER);
+
+            // Card selector
+            List<CardInfo> cards = getAvailableCards();
+            if (!cards.isEmpty()) {
+                JPanel cardPnl = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+                cardPnl.setOpaque(false);
+                JLabel lblCard = new JLabel("🌐 Card mạng:");
+                lblCard.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                cardPnl.add(lblCard);
+
+                JComboBox<CardInfo> cbCards = new JComboBox<>(cards.toArray(new CardInfo[0]));
+                cbCards.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                if (core.getActiveCard() != null) {
+                    for (int i = 0; i < cards.size(); i++) {
+                        if (cards.get(i).ip.equals(core.getActiveCard().ip)) {
+                            cbCards.setSelectedIndex(i);
+                            break;
+                        }
+                    }
+                }
+                cbCards.addActionListener(e -> {
+                    CardInfo sel = (CardInfo) cbCards.getSelectedItem();
+                    if (sel != null && (core.getActiveCard() == null || !sel.ip.equals(core.getActiveCard().ip))) {
+                        core.setActiveCard(sel);
+                        lblStatus.setText(getStatusText());
+                    }
+                });
+                cardPnl.add(cbCards);
+                subStatusBar.add(cardPnl, BorderLayout.EAST);
+            }
 
             topContainer.add(subStatusBar, BorderLayout.SOUTH);
             root.add(topContainer, BorderLayout.NORTH);
@@ -916,9 +1068,13 @@ public class LanChat {
         }
 
         private String getStatusText() {
+            String cardDesc = (core.getActiveCard() != null)
+                    ? (core.getActiveCard().isHotspot ? "🔥 [HOTSPOT] " : "📶 ") + core.getActiveCard().ip
+                    : "Mặc định";
             return "ID: " + core.getId()
                     + "  |  Máy: " + core.getHostName()
-                    + "  |  Multicast: " + GROUP_PREFIX + core.getRoom() + ":" + MC_PORT
+                    + "  |  Card: " + cardDesc
+                    + "  |  Phòng " + core.getRoom() + " (" + GROUP_PREFIX + core.getRoom() + ":" + MC_PORT + ")"
                     + "  |  Broadcast: Cổng " + BC_PORT;
         }
 
@@ -1090,7 +1246,8 @@ public class LanChat {
             if (!a.startsWith("-")) { ifArg = a; break; }
         }
         LanChat app = new LanChat(name, ifArg);
-        System.out.println("Card mạng sử dụng:");
+        System.out.println("Card mạng ưu tiên: " + (app.getActiveCard() != null ? app.getActiveCard().toString() : "Tự động"));
+        System.out.println("Tất cả card mạng tham gia multicast:");
         for (NetworkInterface ni : app.ifaces) System.out.println("   - " + describe(ni));
         StringJoiner sj = new StringJoiner(", ");
         for (InetAddress b : app.broadcastAddrs) sj.add(b.getHostAddress());

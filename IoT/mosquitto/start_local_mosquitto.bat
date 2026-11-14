@@ -3,13 +3,23 @@ cd /d "%~dp0"
 title Mosquitto MQTT Broker Local
 
 echo ========================================================
-echo   KHOI DONG MOSQUITTO MQTT BROKER (LOCAL)
+echo   KHOI DONG MOSQUITTO MQTT BROKER LOCAL
 echo ========================================================
 echo.
 
-:: Thu tat service chay ngam cua Windows (neu co)
-net stop mosquitto >nul 2>nul
+:: Kiem tra va tat Windows Service mosquitto neu dang chay chiem cong 1883
+sc query mosquitto 2>nul | find "RUNNING" >nul
+if errorlevel 1 goto CHECK_BROKER
 
+echo [INFO] Phat hien Windows Service mosquitto dang chay ngam. Dang tat de tranh xung dot cong 1883...
+net stop mosquitto >nul 2>nul
+sc query mosquitto 2>nul | find "RUNNING" >nul
+if errorlevel 1 goto CHECK_BROKER
+
+echo [INFO] Dang yeu cau quyen Admin de tat Windows Service mosquitto. Bam Yes neu thay thong bao UAC...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList '/c net stop mosquitto & sc config mosquitto start= demand' -Verb RunAs -Wait" >nul 2>nul
+
+:CHECK_BROKER
 set "CONFIG_FILE=%~dp0mosquitto.conf"
 
 :: 1. Kiem tra C:\Program Files\mosquitto

@@ -717,6 +717,7 @@ function initApp() {
       document.getElementById('brokerUrl').value = PROFILES.local.url;
       document.getElementById('brokerUsername').value = PROFILES.local.username;
       document.getElementById('brokerPassword').value = PROFILES.local.password;
+      connectMQTT();
     });
 
     btnPublic.addEventListener('click', () => {
@@ -725,6 +726,7 @@ function initApp() {
       document.getElementById('brokerUrl').value = PROFILES.public.url;
       document.getElementById('brokerUsername').value = PROFILES.public.username;
       document.getElementById('brokerPassword').value = PROFILES.public.password;
+      connectMQTT();
     });
   }
 

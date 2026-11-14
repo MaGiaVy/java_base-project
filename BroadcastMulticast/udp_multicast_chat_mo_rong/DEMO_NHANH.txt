@@ -1,0 +1,47 @@
+DEMO NHANH - UDP MULTICAST CHAT
+==============================
+
+1) TAT CA MAY: cung Wi-Fi/LAN.
+2) Windows: Run as administrator -> allow_udp_8000_windows.bat
+3) Compile: javac *.java
+
+MAY 1:
+  java MulticastChat May1
+  -> chon 1
+
+MAY 2:
+  java MulticastChat May2
+  -> chon 1
+
+MAY 3:
+  java MulticastChat May3
+  -> chon 1
+
+MAY 4:
+  java MulticastChat May4
+  -> chon 1
+
+MAY 5 (doi chung, KHONG JOIN):
+  java NonMember May5
+
+TEST CHAT:
+  May1 go: Xin chao ca nhom
+  -> May2/3/4 nhan.
+  May2 tra loi -> May1/3/4 nhan.
+  May5 khong nhan.
+
+TEST DOI PHONG:
+  May3: /join 2
+  -> May3 khong con nhan tin cua phong 1.
+  May3: /join 1
+  -> quay lai phong 1.
+
+TEST MAT GOI + GUI LAI:
+  May2: /loss 3
+  May1 gui 4 tin lien tiep.
+  -> May2 bo #0003 lan dau.
+  -> Khi #0004 den, May2 phat hien thieu #0003 va gui NACK.
+  -> May1 gui lai #0003.
+
+THOAT:
+  /exit

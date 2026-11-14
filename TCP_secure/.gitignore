@@ -1,0 +1,4 @@
+target/
+slides_img/
+*.log
+.system_generated/
