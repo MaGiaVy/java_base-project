@@ -1,7 +1,8 @@
 /**
  * =========================================================================
- * Web Dashboard MQTT Client & Real-time Visualization
- * Điều khiển & Giám sát ESP32 Wokwi qua WebSockets
+ * Web Dashboard MQTT Client & Industrial Hardware Station
+ * Trường Đại Học Sài Gòn (SGU) - GV: Trần Minh Nhật
+ * Giám Sát Cảm Biến & Điều Khiển Thiết Bị ESP32 / Mosquitto qua WebSockets
  * =========================================================================
  */
 
@@ -9,8 +10,13 @@
 const TOPICS = {
   TELEMETRY: 'esp32/sensor/dht22/data',
   LEGACY_TELEMETRY: 'sensor/data',
+  SENSOR_TEMP: 'sensor/temp',
+  SENSOR_HUM: 'sensor/humidity',
+  SENSOR_ALL: 'sensor/#',
   LED_CMD: 'esp32/led/command',
-  STATUS: 'esp32/status'
+  STATUS: 'esp32/status',
+  CHAT_ROOM: 'chat/room',
+  CHAT_ALL: 'chat/#'
 };
 
 const PROFILES = {
@@ -27,12 +33,19 @@ const PROFILES = {
 };
 
 let mqttClient = null;
-let currentTemp = 0;
-let currentHum = 0;
+let currentTemp = 28.6;
+let currentHum = 62.4;
 let isLedOn = false;
+let realTimeChart = null;
+let isAudioEnabled = true;
+let audioCtx = null;
 
-// --- Khởi tạo Chart.js ---
-const ctxChart = document.getElementById('tempChart').getContext('2d');
+// Lưu trữ lịch sử điểm đo cho Sparklines
+const sparklineData = {
+  temp: [26, 27, 28, 28.5, 29, 28.6],
+  hum: [60, 61, 62, 63, 62.5, 62.4]
+};
+
 const chartData = {
   labels: [],
   datasets: [
@@ -40,46 +53,63 @@ const chartData = {
       label: 'Nhiệt Độ (°C)',
       borderColor: '#f97316',
       backgroundColor: 'rgba(249, 115, 22, 0.1)',
-      data: [],
-      tension: 0.3,
-      fill: true
+      borderWidth: 2,
+      tension: 0.35,
+      fill: true,
+      data: []
     },
     {
       label: 'Độ Ẩm (%)',
       borderColor: '#06b6d4',
       backgroundColor: 'rgba(6, 182, 212, 0.1)',
-      data: [],
-      tension: 0.3,
-      fill: true
+      borderWidth: 2,
+      tension: 0.35,
+      fill: true,
+      data: []
     }
   ]
 };
 
-const realTimeChart = new Chart(ctxChart, {
-  type: 'line',
-  data: chartData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: {
-        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#94a3b8' }
-      },
-      y: {
-        min: 0,
-        max: 100,
-        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-        ticks: { color: '#94a3b8' }
-      }
-    },
-    plugins: {
-      legend: { display: false }
-    }
+// --- Khởi tạo Chart.js an toàn ---
+function initChart() {
+  if (typeof Chart === 'undefined') {
+    console.warn('[Chart] Thư viện Chart.js chưa sẵn sàng.');
+    return;
   }
-});
+  const canvas = document.getElementById('tempChart');
+  if (!canvas) return;
 
-// --- Hàm Vẽ Đồng Hồ Đo (Canvas Gauge Meter) ---
+  try {
+    const ctx = canvas.getContext('2d');
+    realTimeChart = new Chart(ctx, {
+      type: 'line',
+      data: chartData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#94a3b8' }
+          },
+          y: {
+            min: 0,
+            max: 100,
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#94a3b8' }
+          }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[Chart] Lỗi khởi tạo Chart:', err);
+  }
+}
+
+// --- Hàm Vẽ Đồng Hồ Đo Kim (Analog Canvas Gauge Meter) ---
 function drawGauge(canvasId, value, min, max, unit, mainColor, alertThreshold = null) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
@@ -96,37 +126,56 @@ function drawGauge(canvasId, value, min, max, unit, mainColor, alertThreshold = 
   const endAngle = 2.25 * Math.PI;
   const totalAngle = endAngle - startAngle;
 
-  // 1. Vẽ vòng cung nền (Track)
+  // 1. Vòng cung nền (Track)
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, startAngle, endAngle, false);
-  ctx.lineWidth = 16;
-  ctx.strokeStyle = '#243049';
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = '#1e293b';
   ctx.lineCap = 'round';
   ctx.stroke();
 
-  // 2. Tính góc tỷ lệ theo giá trị
+  // 2. Tỷ lệ giá trị
   const clampedVal = Math.min(Math.max(value, min), max);
   const ratio = (clampedVal - min) / (max - min);
   const valAngle = startAngle + ratio * totalAngle;
 
-  // Xác định màu sắc (Đổi sang đỏ rực nếu vượt ngưỡng cảnh báo)
+  // Đổi màu nếu vượt ngưỡng
   let activeColor = mainColor;
   if (alertThreshold !== null && value > alertThreshold) {
     activeColor = '#ef4444';
   }
 
-  // 3. Vẽ vòng cung tiến độ (Progress Arc)
+  // 3. Vòng cung tiến độ (Progress Arc)
   if (ratio > 0) {
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, startAngle, valAngle, false);
-    ctx.lineWidth = 16;
+    ctx.lineWidth = 14;
     ctx.strokeStyle = activeColor;
     ctx.lineCap = 'round';
     ctx.stroke();
   }
 
-  // 4. Vẽ kim chỉ (Needle)
-  const needleLen = radius - 8;
+  // 4. Vạch chia số (Tick marks)
+  for (let i = 0; i <= 10; i++) {
+    const tickRatio = i / 10;
+    const tickAngle = startAngle + tickRatio * totalAngle;
+    const innerR = radius - 14;
+    const outerR = radius - 8;
+    const x1 = centerX + innerR * Math.cos(tickAngle);
+    const y1 = centerY + innerR * Math.sin(tickAngle);
+    const x2 = centerX + outerR * Math.cos(tickAngle);
+    const y2 = centerY + outerR * Math.sin(tickAngle);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineWidth = i % 5 === 0 ? 2 : 1;
+    ctx.strokeStyle = i % 5 === 0 ? '#94a3b8' : '#475569';
+    ctx.stroke();
+  }
+
+  // 5. Kim chỉ (Needle)
+  const needleLen = radius - 6;
   const needleX = centerX + needleLen * Math.cos(valAngle);
   const needleY = centerY + needleLen * Math.sin(valAngle);
 
@@ -140,50 +189,228 @@ function drawGauge(canvasId, value, min, max, unit, mainColor, alertThreshold = 
   // Tâm kim
   ctx.beginPath();
   ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
-  ctx.fillStyle = '#f8fafc';
+  ctx.fillStyle = activeColor;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#f8fafc';
+  ctx.stroke();
+}
+
+// --- Hàm Vẽ Mini Sparkline (Chuẩn Slide 2 Wokwi) ---
+function drawSparkline(canvasId, dataList, strokeColor, minVal, maxVal) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.clearRect(0, 0, w, h);
+  if (dataList.length < 2) return;
+
+  const stepX = w / (dataList.length - 1);
+  ctx.beginPath();
+  dataList.forEach((val, idx) => {
+    const normY = (val - minVal) / (maxVal - minVal);
+    const clampedY = Math.min(Math.max(normY, 0), 1);
+    const y = h - clampedY * (h - 8) - 4;
+    const x = idx * stepX;
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Điểm cuối cùng
+  const lastVal = dataList[dataList.length - 1];
+  const lastNormY = (lastVal - minVal) / (maxVal - minVal);
+  const lastY = h - Math.min(Math.max(lastNormY, 0), 1) * (h - 8) - 4;
+  ctx.beginPath();
+  ctx.arc(w - 2, lastY, 3, 0, 2 * Math.PI);
+  ctx.fillStyle = strokeColor;
   ctx.fill();
 }
 
-// --- Hàm Cập Nhật Trạng Thái Giao Diện ---
+// --- Cảnh Báo Âm Thanh Web Audio Synthesizer ---
+function triggerWarningSound() {
+  if (!isAudioEnabled) return;
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz (A5)
+    osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // 659Hz (E5)
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.25);
+  } catch (e) {
+    console.warn('[Audio] Không thể phát âm thanh:', e);
+  }
+}
+
+// --- Cập nhật Giao Diện Trạng Thái Kết Nối ---
 function updateConnectionUI(connected, text = null) {
   const badge = document.getElementById('connectionStatus');
   const btnConnect = document.getElementById('btnConnect');
   const btnDisconnect = document.getElementById('btnDisconnect');
+  const ledWifi = document.getElementById('ledWifiStatus');
+  const ledMqtt = document.getElementById('ledMqttStatus');
+  const meter1883 = document.getElementById('meter1883');
+  const meter9001 = document.getElementById('meter9001');
 
   if (connected) {
     badge.className = 'status-badge connected';
     badge.querySelector('.status-text').textContent = text || 'Đã kết nối (Online)';
     btnConnect.disabled = true;
     btnDisconnect.disabled = false;
+
+    if (ledWifi) ledWifi.className = 'led-light led-blue active';
+    if (ledMqtt) ledMqtt.className = 'led-light led-green active';
+    if (meter1883) meter1883.className = 'port-led active';
+    if (meter9001) meter9001.className = 'port-led active';
   } else {
     badge.className = 'status-badge disconnected';
-    badge.querySelector('.status-text').textContent = text || 'Ngắt kết nối (Offline)';
+    badge.querySelector('.status-text').textContent = text || 'Chưa kết nối (Offline)';
     btnConnect.disabled = false;
     btnDisconnect.disabled = true;
+
+    if (ledMqtt) ledMqtt.className = 'led-light led-green';
+    if (meter9001) meter9001.className = 'port-led';
   }
 }
 
+// --- Cập nhật Giao Diện Đèn LED ---
 function updateLedUI(state) {
-  isLedOn = (state === true || state === 'ON' || state === '1');
-  const bulb = document.getElementById('ledVisual');
-  const label = document.getElementById('ledStatusText');
+  isLedOn = (state === 'ON' || state === true);
   const toggle = document.getElementById('ledToggle');
+  const statusText = document.getElementById('ledStatusText');
+  const physicalLed = document.getElementById('physicalLedBulb');
+  const ledGpio4 = document.getElementById('ledGpio4Status');
+
+  if (toggle) toggle.checked = isLedOn;
 
   if (isLedOn) {
-    bulb.className = 'led-bulb on';
-    label.textContent = 'BẬT (ON)';
-    label.style.color = '#4ade80';
-    toggle.checked = true;
+    if (statusText) {
+      statusText.textContent = 'BẬT (ON)';
+      statusText.className = 'badge-on';
+    }
+    if (physicalLed) {
+      physicalLed.className = 'physical-led on';
+    }
+    if (ledGpio4) {
+      ledGpio4.className = 'led-light led-d4 active';
+    }
   } else {
-    bulb.className = 'led-bulb off';
-    label.textContent = 'TẮT (OFF)';
-    label.style.color = '#94a3b8';
-    toggle.checked = false;
+    if (statusText) {
+      statusText.textContent = 'TẮT (OFF)';
+      statusText.className = 'badge-off';
+    }
+    if (physicalLed) {
+      physicalLed.className = 'physical-led off';
+    }
+    if (ledGpio4) {
+      ledGpio4.className = 'led-light led-d4';
+    }
   }
 }
 
+// --- Cập nhật số đo cảm biến toàn diện ---
+function updateTelemetry(temp, hum) {
+  let updated = false;
+
+  if (temp !== undefined && !isNaN(temp)) {
+    currentTemp = parseFloat(temp);
+    const tempStr = currentTemp.toFixed(1);
+
+    // 1. Cập nhật thẻ Analog Gauge
+    const elTemp = document.getElementById('tempValue');
+    if (elTemp) elTemp.textContent = tempStr;
+    drawGauge('tempGauge', currentTemp, 0, 100, '°C', '#f97316', 35.0);
+
+    // 2. Cập nhật Trạm Phần Cứng
+    const elDhtTemp = document.getElementById('dhtTempDisplay');
+    if (elDhtTemp) elDhtTemp.textContent = `${tempStr} °C`;
+
+    // 3. Cập nhật Widget Wokwi Display
+    const elWokwiTemp = document.getElementById('wokwiTempValue');
+    if (elWokwiTemp) elWokwiTemp.textContent = `${tempStr} °C`;
+
+    // 4. Sparkline & Alert
+    sparklineData.temp.push(currentTemp);
+    if (sparklineData.temp.length > 12) sparklineData.temp.shift();
+    drawSparkline('sparklineTemp', sparklineData.temp, '#f97316', 15, 45);
+
+    const alertBadge = document.getElementById('tempBadgeAlert');
+    if (alertBadge) {
+      if (currentTemp > 35.0) {
+        alertBadge.textContent = '🔥 CẢNH BÁO QUÁ NHIỆT';
+        alertBadge.className = 'badge-alert';
+        triggerWarningSound();
+      } else {
+        alertBadge.textContent = 'Bình thường';
+        alertBadge.className = 'badge-normal';
+      }
+    }
+    updated = true;
+  }
+
+  if (hum !== undefined && !isNaN(hum)) {
+    currentHum = parseFloat(hum);
+    const humStr = currentHum.toFixed(1);
+
+    // 1. Cập nhật thẻ Analog Gauge
+    const elHum = document.getElementById('humValue');
+    if (elHum) elHum.textContent = humStr;
+    drawGauge('humGauge', currentHum, 0, 100, '%', '#06b6d4');
+
+    // 2. Cập nhật Trạm Phần Cứng
+    const elDhtHum = document.getElementById('dhtHumDisplay');
+    if (elDhtHum) elDhtHum.textContent = `${humStr} %`;
+
+    // 3. Cập nhật Widget Wokwi Display
+    const elWokwiHum = document.getElementById('wokwiHumValue');
+    if (elWokwiHum) elWokwiHum.textContent = `${humStr} %`;
+
+    // 4. Sparkline
+    sparklineData.hum.push(currentHum);
+    if (sparklineData.hum.length > 12) sparklineData.hum.shift();
+    drawSparkline('sparklineHum', sparklineData.hum, '#06b6d4', 20, 95);
+
+    updated = true;
+  }
+
+  // Cập nhật biểu đồ chính nếu có dữ liệu
+  if (updated && realTimeChart) {
+    const timeLabel = new Date().toTimeString().split(' ')[0];
+    chartData.labels.push(timeLabel);
+    chartData.datasets[0].data.push(currentTemp);
+    chartData.datasets[1].data.push(currentHum);
+
+    if (chartData.labels.length > 18) {
+      chartData.labels.shift();
+      chartData.datasets[0].data.shift();
+      chartData.datasets[1].data.shift();
+    }
+    realTimeChart.update();
+  }
+}
+
+// --- Ghi Nhật Ký Thông Điệp ---
 function appendLog(topic, message) {
   const tableBody = document.getElementById('logTableBody');
+  if (!tableBody) return;
   const emptyRow = tableBody.querySelector('.empty-row');
   if (emptyRow) emptyRow.remove();
 
@@ -192,37 +419,62 @@ function appendLog(topic, message) {
 
   const row = document.createElement('tr');
   row.innerHTML = `
-    <td><code>${timeStr}</code></td>
-    <td><span style="color:#38bdf8; font-weight:600;">${topic}</span></td>
-    <td><code>${escapeHtml(message)}</code></td>
+    <td>${timeStr}</td>
+    <td><code>${escapeHtml(topic)}</code></td>
+    <td>${escapeHtml(message)}</td>
   `;
-  tableBody.insertBefore(row, tableBody.firstChild);
 
-  // Giữ tối đa 50 dòng log gần nhất
+  tableBody.insertBefore(row, tableBody.firstChild);
   if (tableBody.children.length > 50) {
     tableBody.removeChild(tableBody.lastChild);
   }
 }
 
+// --- Ghi Tin Nhắn Vào Khung Chat MQTT ---
+function appendChatMessage(sender, text, isSelf = false) {
+  const chatList = document.getElementById('chatMessageList');
+  if (!chatList) return;
+
+  const now = new Date();
+  const timeStr = now.toTimeString().split(' ')[0];
+  const item = document.createElement('div');
+  item.className = `chat-item ${isSelf ? 'sent-msg' : 'received-msg'}`;
+  item.innerHTML = `
+    <span class="time">[${timeStr}]</span>
+    <span class="sender">${escapeHtml(sender)}:</span>
+    <span class="text">${escapeHtml(text)}</span>
+  `;
+
+  chatList.appendChild(item);
+  chatList.scrollTop = chatList.scrollHeight;
+}
+
 function escapeHtml(str) {
-  return str.replace(/[&<>'"]/g, tag => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  if (typeof str !== 'string') str = String(str);
+  return str.replace(/[&<>"']/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
   }[tag] || tag));
 }
 
 // --- Quản Lý Kết Nối MQTT ---
 function connectMQTT() {
+  if (typeof mqtt === 'undefined') {
+    alert('Thư viện mqtt.js chưa tải được. Vui lòng kiểm tra lại kết nối mạng hoặc file web/lib/mqtt.min.js');
+    return;
+  }
+
   const url = document.getElementById('brokerUrl').value.trim();
   const username = document.getElementById('brokerUsername').value.trim();
   const password = document.getElementById('brokerPassword').value.trim();
 
   updateConnectionUI(false, 'Đang kết nối...');
+  appendLog('system/status', `Bắt đầu kết nối tới ${url}...`);
 
-  if (mqttClient) {
-    try { mqttClient.end(true); } catch (e) {}
-  }
-
-  const clientId = 'WebDashboard_' + Math.random().toString(16).substring(2, 10);
+  const clientId = 'WebDashboard_SGU_' + Math.random().toString(16).substring(2, 8);
   const options = {
     clientId: clientId,
     clean: true,
@@ -234,135 +486,311 @@ function connectMQTT() {
   if (password) options.password = password;
 
   try {
+    if (mqttClient) {
+      mqttClient.end(true);
+    }
     mqttClient = mqtt.connect(url, options);
 
     mqttClient.on('connect', () => {
-      console.log('[MQTT] Kết nối thành công tới:', url);
-      updateConnectionUI(true, 'Đã kết nối Broker');
+      console.log('[MQTT] Đã kết nối thành công!');
+      updateConnectionUI(true, 'Đã kết nối (Online)');
+      appendLog('system/status', `Kết nối thành công! ClientID: ${clientId}`);
 
-      // Đăng ký nhận dữ liệu cảm biến (topic chính) và lệnh điều khiển
-      mqttClient.subscribe(TOPICS.TELEMETRY, { qos: 0 });
-      mqttClient.subscribe(TOPICS.LED_CMD, { qos: 0 });
-      mqttClient.subscribe(TOPICS.STATUS, { qos: 0 });
+      // Đăng ký các topic hệ thống & phòng chat
+      const subscribeTopics = [
+        TOPICS.TELEMETRY,
+        TOPICS.LEGACY_TELEMETRY,
+        TOPICS.SENSOR_ALL,
+        TOPICS.LED_CMD,
+        TOPICS.STATUS,
+        TOPICS.CHAT_ALL,
+        'test/#'
+      ];
 
-      appendLog('[HỆ THỐNG]', `Đã kết nối Broker ${url} & subscribe topics`);
+      subscribeTopics.forEach(top => {
+        mqttClient.subscribe(top, (err) => {
+          if (!err) appendLog('system/subscribe', `Đã đăng ký (Subscribed): ${top}`);
+        });
+      });
     });
 
     mqttClient.on('message', (topic, payload) => {
       const msgStr = payload.toString();
       appendLog(topic, msgStr);
 
-      if (topic === TOPICS.TELEMETRY || topic === TOPICS.LEGACY_TELEMETRY) {
+      // 1. Phân loại tin nhắn Chat
+      if (topic.startsWith('chat/') || topic.startsWith('test/')) {
+        const sender = topic.includes('room') ? 'Phòng Chat' : topic;
+        appendChatMessage(sender, msgStr, false);
+      }
+
+      // 2. Xử lý dữ liệu cảm biến DHT22
+      if (topic === TOPICS.TELEMETRY || topic === TOPICS.LEGACY_TELEMETRY || topic.includes('sensor')) {
         try {
           const data = JSON.parse(msgStr);
-          if (data.temperature !== undefined) {
-            currentTemp = parseFloat(data.temperature);
-            document.getElementById('tempValue').textContent = currentTemp.toFixed(1);
-            drawGauge('tempGauge', currentTemp, 0, 100, '°C', '#f97316', 35.0);
+          const t = data.temp !== undefined ? data.temp : data.temperature;
+          const h = data.hum !== undefined ? data.hum : data.humidity;
+          if (t !== undefined || h !== undefined) {
+            updateTelemetry(t, h);
+            return;
           }
-          if (data.humidity !== undefined) {
-            currentHum = parseFloat(data.humidity);
-            document.getElementById('humValue').textContent = currentHum.toFixed(1);
-            drawGauge('humGauge', currentHum, 0, 100, '%', '#06b6d4');
-          }
-
-          // Cập nhật biểu đồ thời gian thực
-          const timeLabel = new Date().toTimeString().split(' ')[0];
-          chartData.labels.push(timeLabel);
-          chartData.datasets[0].data.push(currentTemp);
-          chartData.datasets[1].data.push(currentHum);
-
-          if (chartData.labels.length > 15) {
-            chartData.labels.shift();
-            chartData.datasets[0].data.shift();
-            chartData.datasets[1].data.shift();
-          }
-          realTimeChart.update();
         } catch (e) {
-          console.warn('[MQTT] Lỗi parse JSON payload:', msgStr);
+          // Payload là số thô (ví dụ: topic "sensor/temp" payload "30")
+          const num = parseFloat(msgStr);
+          if (!isNaN(num)) {
+            if (topic.includes('temp')) updateTelemetry(num, undefined);
+            else if (topic.includes('hum')) updateTelemetry(undefined, num);
+          }
         }
-      } else if (topic === TOPICS.LED_CMD) {
-        updateLedUI(msgStr);
+      }
+
+      // 3. Lệnh điều khiển LED
+      if (topic === TOPICS.LED_CMD) {
+        const cleanCmd = msgStr.trim().toUpperCase();
+        if (cleanCmd === 'ON' || cleanCmd === '1') updateLedUI('ON');
+        else if (cleanCmd === 'OFF' || cleanCmd === '0') updateLedUI('OFF');
       }
     });
 
-    mqttClient.on('close', () => {
-      updateConnectionUI(false, 'Mất kết nối');
+    mqttClient.on('error', (err) => {
+      console.error('[MQTT] Lỗi kết nối:', err);
+      updateConnectionUI(false, 'Lỗi kết nối');
+      appendLog('system/error', `Lỗi: ${err.message || err}`);
     });
 
-    mqttClient.on('error', (err) => {
-      console.error('[MQTT Error]:', err);
-      updateConnectionUI(false, 'Lỗi kết nối');
-      appendLog('[LỖI]', `Không thể kết nối WebSocket: ${err.message || err}`);
+    mqttClient.on('close', () => {
+      updateConnectionUI(false, 'Chưa kết nối (Offline)');
     });
 
   } catch (err) {
-    console.error('[Exception]:', err);
-    updateConnectionUI(false, 'Lỗi khởi tạo');
+    console.error('[MQTT] Exception:', err);
+    updateConnectionUI(false, 'Lỗi ngoại lệ');
+    appendLog('system/error', `Exception: ${err.message}`);
   }
 }
 
 function disconnectMQTT() {
   if (mqttClient) {
-    mqttClient.end();
-    mqttClient = null;
-    updateConnectionUI(false, 'Đã ngắt kết nối');
-    appendLog('[HỆ THỐNG]', 'Người dùng đã ngắt kết nối Broker.');
+    mqttClient.end(false, () => {
+      updateConnectionUI(false, 'Đã ngắt kết nối');
+      appendLog('system/status', 'Người dùng đã chủ động ngắt kết nối.');
+    });
   }
 }
 
-function sendLedCommand(stateStr) {
+// --- Gửi Lệnh Bật/Tắt Đèn LED ---
+function sendLedCommand(cmd) {
   if (!mqttClient || !mqttClient.connected) {
-    alert('Vui lòng kết nối tới MQTT Broker trước khi điều khiển!');
+    // Cho phép đổi trạng thái cục bộ để test giao diện
+    updateLedUI(cmd);
+    appendLog(TOPICS.LED_CMD, `${cmd} (Mô phỏng cục bộ - chưa kết nối broker)`);
     return;
   }
-  mqttClient.publish(TOPICS.LED_CMD, stateStr, { qos: 0, retain: false });
-  updateLedUI(stateStr);
-  appendLog(`[GỬI] ${TOPICS.LED_CMD}`, stateStr);
+  mqttClient.publish(TOPICS.LED_CMD, cmd, { qos: 1 }, (err) => {
+    if (!err) {
+      updateLedUI(cmd);
+      appendLog(TOPICS.LED_CMD, `Đã gửi lệnh điều khiển: ${cmd}`);
+    } else {
+      appendLog('system/error', `Gửi lệnh LED thất bại: ${err.message}`);
+    }
+  });
 }
 
-// --- Thiết lập sự kiện giao diện ---
-document.addEventListener('DOMContentLoaded', () => {
-  // Vẽ gauge ban đầu ở mức 0
-  drawGauge('tempGauge', 0, 0, 100, '°C', '#f97316', 35.0);
-  drawGauge('humGauge', 0, 0, 100, '%', '#06b6d4');
-  updateLedUI(false);
+// --- Gửi Tin Nhắn Chat MQTT ---
+function sendChatMessage() {
+  const inputEl = document.getElementById('chatTextInput');
+  const topicEl = document.getElementById('chatTopicInput');
+  if (!inputEl || !topicEl) return;
 
-  // Nút Kết nối / Ngắt kết nối
-  document.getElementById('btnConnect').addEventListener('click', connectMQTT);
-  document.getElementById('btnDisconnect').addEventListener('click', disconnectMQTT);
+  const msg = inputEl.value.trim();
+  const topic = topicEl.value.trim() || 'chat/room';
+  if (!msg) return;
 
-  // Điều khiển đèn LED
-  document.getElementById('ledToggle').addEventListener('change', (e) => {
-    sendLedCommand(e.target.checked ? 'ON' : 'OFF');
+  if (mqttClient && mqttClient.connected) {
+    mqttClient.publish(topic, msg, { qos: 0 }, (err) => {
+      if (!err) {
+        appendChatMessage('Tôi (Web)', msg, true);
+        appendLog(topic, `[Chat Web] ${msg}`);
+        inputEl.value = '';
+      }
+    });
+  } else {
+    // Mô phỏng chat cục bộ
+    appendChatMessage('Tôi (Cục bộ)', msg, true);
+    appendLog(topic, `[Chat Local] ${msg}`);
+    inputEl.value = '';
+  }
+}
+
+// --- Xuất Báo Cáo Ra File CSV ---
+function exportLogsToCsv() {
+  const table = document.getElementById('logTable');
+  if (!table) return;
+
+  let csvContent = 'data:text/csv;charset=utf-8,Thoi Gian,Topic,Noi Dung Payload\r\n';
+  const rows = table.querySelectorAll('tbody tr');
+  let hasData = false;
+
+  rows.forEach(r => {
+    if (r.classList.contains('empty-row')) return;
+    const cols = r.querySelectorAll('td');
+    if (cols.length >= 3) {
+      const time = `"${cols[0].textContent.trim()}"`;
+      const topic = `"${cols[1].textContent.trim().replace(/"/g, '""')}"`;
+      const payload = `"${cols[2].textContent.trim().replace(/"/g, '""')}"`;
+      csvContent += `${time},${topic},${payload}\r\n`;
+      hasData = true;
+    }
   });
-  document.getElementById('btnTurnOn').addEventListener('click', () => sendLedCommand('ON'));
-  document.getElementById('btnTurnOff').addEventListener('click', () => sendLedCommand('OFF'));
 
-  // Nút chuyển profile nhanh
+  if (!hasData) {
+    alert('Chưa có thông điệp nào để xuất báo cáo CSV!');
+    return;
+  }
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `IoT_Logs_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+// --- Khởi Tạo Ứng Dụng ---
+function initApp() {
+  // 1. Đồng hồ thời gian thực
+  setInterval(() => {
+    const elClock = document.getElementById('liveClock');
+    if (elClock) {
+      elClock.textContent = new Date().toTimeString().split(' ')[0];
+    }
+  }, 1000);
+
+  // 2. Khởi tạo Chart & Gauges ban đầu
+  initChart();
+  updateTelemetry(28.6, 62.4);
+
+  // 3. Gắn sự kiện kết nối
+  const btnConn = document.getElementById('btnConnect');
+  const btnDisconn = document.getElementById('btnDisconnect');
+  if (btnConn) btnConn.addEventListener('click', connectMQTT);
+  if (btnDisconn) btnDisconn.addEventListener('click', disconnectMQTT);
+
+  // 4. Điều khiển LED
+  const toggle = document.getElementById('ledToggle');
+  if (toggle) {
+    toggle.addEventListener('change', (e) => {
+      sendLedCommand(e.target.checked ? 'ON' : 'OFF');
+    });
+  }
+  const btnOn = document.getElementById('btnTurnOn');
+  const btnOff = document.getElementById('btnTurnOff');
+  if (btnOn) btnOn.addEventListener('click', () => sendLedCommand('ON'));
+  if (btnOff) btnOff.addEventListener('click', () => sendLedCommand('OFF'));
+
+  // 5. Nút chuyển cấu hình Profile
   const btnLocal = document.getElementById('btnLocalProfile');
   const btnPublic = document.getElementById('btnPublicProfile');
 
-  btnLocal.addEventListener('click', () => {
-    btnLocal.classList.add('active');
-    btnPublic.classList.remove('active');
-    document.getElementById('brokerUrl').value = PROFILES.local.url;
-    document.getElementById('brokerUsername').value = PROFILES.local.username;
-    document.getElementById('brokerPassword').value = PROFILES.local.password;
-  });
+  if (btnLocal && btnPublic) {
+    btnLocal.addEventListener('click', () => {
+      btnLocal.classList.add('active');
+      btnPublic.classList.remove('active');
+      document.getElementById('brokerUrl').value = PROFILES.local.url;
+      document.getElementById('brokerUsername').value = PROFILES.local.username;
+      document.getElementById('brokerPassword').value = PROFILES.local.password;
+    });
 
-  btnPublic.addEventListener('click', () => {
-    btnPublic.classList.add('active');
-    btnLocal.classList.remove('active');
-    document.getElementById('brokerUrl').value = PROFILES.public.url;
-    document.getElementById('brokerUsername').value = PROFILES.public.username;
-    document.getElementById('brokerPassword').value = PROFILES.public.password;
-  });
+    btnPublic.addEventListener('click', () => {
+      btnPublic.classList.add('active');
+      btnLocal.classList.remove('active');
+      document.getElementById('brokerUrl').value = PROFILES.public.url;
+      document.getElementById('brokerUsername').value = PROFILES.public.username;
+      document.getElementById('brokerPassword').value = PROFILES.public.password;
+    });
+  }
 
-  // Nút xóa log
-  document.getElementById('btnClearLogs').addEventListener('click', () => {
-    document.getElementById('logTableBody').innerHTML = `
-      <tr class="empty-row"><td colspan="3">Chưa có thông điệp nào nhận được...</td></tr>
-    `;
-  });
+  // 6. Thanh công cụ Test nhanh (Simulation Presets)
+  const btnSimDefault = document.getElementById('simSlideDefault');
+  if (btnSimDefault) {
+    btnSimDefault.addEventListener('click', () => {
+      const payload = JSON.stringify({ temp: 28.6, hum: 62.4 });
+      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
+      updateTelemetry(28.6, 62.4);
+      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
+    });
+  }
+
+  const btnSimOverheat = document.getElementById('simOverheat');
+  if (btnSimOverheat) {
+    btnSimOverheat.addEventListener('click', () => {
+      const payload = JSON.stringify({ temp: 39.2, hum: 78.0 });
+      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
+      updateTelemetry(39.2, 78.0);
+      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
+    });
+  }
+
+  const btnSimCool = document.getElementById('simCool');
+  if (btnSimCool) {
+    btnSimCool.addEventListener('click', () => {
+      const payload = JSON.stringify({ temp: 20.5, hum: 50.0 });
+      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
+      updateTelemetry(20.5, 50.0);
+      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
+    });
+  }
+
+  const btnSimLed = document.getElementById('simToggleLed');
+  if (btnSimLed) {
+    btnSimLed.addEventListener('click', () => {
+      sendLedCommand(isLedOn ? 'OFF' : 'ON');
+    });
+  }
+
+  // 7. MQTT Chat & Command Console
+  const btnSendChat = document.getElementById('btnSendChat');
+  const chatInput = document.getElementById('chatTextInput');
+  if (btnSendChat) btnSendChat.addEventListener('click', sendChatMessage);
+  if (chatInput) {
+    chatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendChatMessage();
+    });
+  }
+
+  // 8. Bật/Tắt âm thanh cảnh báo
+  const btnAudio = document.getElementById('btnAudioToggle');
+  if (btnAudio) {
+    btnAudio.addEventListener('click', () => {
+      isAudioEnabled = !isAudioEnabled;
+      document.getElementById('audioIcon').textContent = isAudioEnabled ? '🔊' : '🔇';
+      document.getElementById('audioText').textContent = isAudioEnabled ? 'Âm thanh: BẬT' : 'Âm thanh: TẮT';
+    });
+  }
+
+  // 9. Nút xóa nhật ký & Xuất CSV
+  const btnClear = document.getElementById('btnClearLogs');
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      const tb = document.getElementById('logTableBody');
+      if (tb) tb.innerHTML = '<tr class="empty-row"><td colspan="3">Chưa có thông điệp nào nhận được...</td></tr>';
+    });
+  }
+
+  const btnExport = document.getElementById('btnExportCsv');
+  if (btnExport) btnExport.addEventListener('click', exportLogsToCsv);
+}
+
+// Khởi chạy khi tải xong trang
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
+window.addEventListener('load', () => {
+  drawGauge('tempGauge', currentTemp || 28.6, 0, 100, '°C', '#f97316', 35.0);
+  drawGauge('humGauge', currentHum || 62.4, 0, 100, '%', '#06b6d4');
+  drawSparkline('sparklineTemp', sparklineData.temp, '#f97316', 15, 45);
+  drawSparkline('sparklineHum', sparklineData.hum, '#06b6d4', 20, 95);
 });

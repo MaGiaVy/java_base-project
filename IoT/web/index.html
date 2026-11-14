@@ -3,28 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IoT Smart Monitoring & Control System</title>
+  <title>IoT Smart Monitoring & Control System - SGU</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- MQTT.js qua CDN (hỗ trợ WebSocket) -->
-  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
-  <!-- Chart.js qua CDN cho biểu đồ thời gian thực -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Thư viện cục bộ offline (kèm dự phòng CDN) -->
+  <script src="lib/mqtt.min.js"></script>
+  <script src="lib/chart.min.js"></script>
+  <script>
+    if (typeof mqtt === 'undefined') {
+      document.write('<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"><\/script>');
+    }
+    if (typeof Chart === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>');
+    }
+  </script>
 </head>
 <body>
   <div class="app-container">
-    <!-- Header -->
+    <!-- Academic & Brand Header -->
     <header class="header">
       <div class="header-left">
-        <div class="logo-icon">⚡</div>
-        <div>
-          <h1>IoT Smart Monitoring & Control</h1>
-          <p class="subtitle">Hệ thống Giám Sát Cảm Biến & Điều Khiển Thiết Bị Qua MQTT</p>
+        <div class="brand-badge">
+          <div class="sgu-crest">⚡</div>
+          <div class="brand-text">
+            <span class="sub-univ">TRƯỜNG ĐẠI HỌC SÀI GÒN (SGU) • KHOA CÔNG NGHỆ THÔNG TIN</span>
+            <h1>KỸ THUẬT IOT - TRẠM GIÁM SÁT & ĐIỀU KHIỂN THÔNG MINH</h1>
+            <p class="subtitle">Giảng viên: <strong>TRẦN MINH NHẬT</strong> | Hệ thống: <strong>ESP32 + Mosquitto MQTT Broker + Web & Java</strong></p>
+          </div>
         </div>
       </div>
       <div class="header-right">
+        <div class="header-controls">
+          <button id="btnAudioToggle" class="btn-icon-toggle" title="Bật/Tắt âm thanh cảnh báo">
+            <span id="audioIcon">🔊</span> <span id="audioText">Âm thanh: BẬT</span>
+          </button>
+          <div id="liveClock" class="live-clock">--:--:--</div>
+        </div>
         <div id="connectionStatus" class="status-badge disconnected">
           <span class="status-dot"></span>
-          <span class="status-text">Chưa kết nối</span>
+          <span class="status-text">Chưa kết nối (Offline)</span>
         </div>
       </div>
     </header>
@@ -32,39 +48,211 @@
     <!-- Broker Connection Settings -->
     <section class="card settings-card">
       <div class="settings-header">
-        <h2>🌐 Thiết Lập Kết Nối Broker</h2>
+        <div class="card-title">
+          <span class="icon">🌐</span>
+          <h2>Cấu Hình Kết Nối Mosquitto MQTT Broker</h2>
+        </div>
         <div class="preset-buttons">
           <button id="btnLocalProfile" class="btn btn-outline active">Local Mosquitto (ws://localhost:9001)</button>
           <button id="btnPublicProfile" class="btn btn-outline">Public EMQX (wss://broker.emqx.io:8084/mqtt)</button>
         </div>
       </div>
       <div class="settings-form">
-        <div class="form-group">
-          <label for="brokerUrl">WebSocket URL:</label>
+        <div class="form-group flex-2">
+          <label for="brokerUrl">WebSocket Broker URL:</label>
           <input type="text" id="brokerUrl" value="ws://localhost:9001" placeholder="ws://localhost:9001">
         </div>
         <div class="form-group">
           <label for="brokerUsername">Username:</label>
-          <input type="text" id="brokerUsername" value="user1" placeholder="user1">
+          <input type="text" id="brokerUsername" value="user1" placeholder="user1 (hoặc để trống)">
         </div>
         <div class="form-group">
           <label for="brokerPassword">Password:</label>
-          <input type="password" id="brokerPassword" value="123" placeholder="123">
+          <input type="password" id="brokerPassword" value="123" placeholder="123 (hoặc để trống)">
         </div>
         <div class="form-actions">
-          <button id="btnConnect" class="btn btn-primary">Kết Nối</button>
+          <button id="btnConnect" class="btn btn-primary">⚡ Kết Nối</button>
           <button id="btnDisconnect" class="btn btn-danger" disabled>Ngắt Kết Nối</button>
         </div>
       </div>
     </section>
 
-    <!-- Main Grid: Gauges & Controls -->
+    <!-- Quick Simulation & Testing Toolbar -->
+    <section class="simulation-toolbar">
+      <span class="sim-label">🚀 Bắn dữ liệu mẫu nhanh (1-Click Test):</span>
+      <div class="sim-buttons">
+        <button id="simSlideDefault" class="btn-sim">📊 Mặc Định Slide (28.6°C | 62.4%)</button>
+        <button id="simOverheat" class="btn-sim sim-alert">🔥 Cảnh Báo Quá Nhiệt (39.2°C | 78%)</button>
+        <button id="simCool" class="btn-sim sim-cool">❄️ Mát Lạnh (20.5°C | 50%)</button>
+        <button id="simToggleLed" class="btn-sim sim-led">💡 Đảo Đèn LED (Bật/Tắt)</button>
+      </div>
+    </section>
+
+    <!-- Hardware Station Showcase (Máy IoT Phần Cứng Trực Quan) -->
+    <section class="card hardware-card">
+      <div class="card-title">
+        <span class="icon">🎛️</span>
+        <h3>MÔ PHỎNG THIẾT BỊ PHẦN CỨNG IOT (ESP32 + DHT22 + LED + BROKER RACK)</h3>
+        <span class="hw-badge">Hardware Live Status</span>
+      </div>
+
+      <div class="hardware-station-grid">
+        <!-- 1. ESP32 DevKit Board Visual -->
+        <div class="hw-device-box esp32-box">
+          <div class="hw-device-header">
+            <span class="hw-title">ESP32 DevKit V1</span>
+            <span class="hw-chip-badge">32-bit Dual Core</span>
+          </div>
+          <div class="esp32-visual">
+            <div class="antenna-pattern"></div>
+            <div class="esp32-shield">
+              <div class="shield-text">
+                <strong>ESP-WROOM-32</strong>
+                <small>FCC ID: 2AC7Z-ESPWROOM32</small>
+              </div>
+            </div>
+            <!-- Status Indicators -->
+            <div class="esp-led-row">
+              <div class="esp-led-item">
+                <span class="led-light led-red active"></span>
+                <span class="led-tag">PWR</span>
+              </div>
+              <div class="esp-led-item">
+                <span id="ledWifiStatus" class="led-light led-blue active"></span>
+                <span class="led-tag">WIFI</span>
+              </div>
+              <div class="esp-led-item">
+                <span id="ledMqttStatus" class="led-light led-green"></span>
+                <span class="led-tag">MQTT</span>
+              </div>
+              <div class="esp-led-item">
+                <span id="ledGpio4Status" class="led-light led-d4"></span>
+                <span class="led-tag">D4/LED</span>
+              </div>
+            </div>
+            <div class="esp32-pinout-labels">
+              <span>VIN</span><span>GND</span><span>D16 (DHT)</span><span>D4 (LED)</span><span>EN</span><span>BOOT</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. DHT22 Digital Sensor Visual -->
+        <div class="hw-device-box dht22-box">
+          <div class="hw-device-header">
+            <span class="hw-title">Cảm Biến DHT22 / AM2302</span>
+            <span class="hw-chip-badge">GPIO 16</span>
+          </div>
+          <div class="dht22-visual">
+            <div class="dht22-casing">
+              <div class="dht-grille">
+                <span class="grille-slot"></span>
+                <span class="grille-slot"></span>
+                <span class="grille-slot"></span>
+                <span class="grille-slot"></span>
+              </div>
+              <div class="dht-pin-leads">
+                <span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="dht-realtime-readout">
+              <div class="readout-item">
+                <span class="label">Nhiệt độ đo được:</span>
+                <span id="dhtTempDisplay" class="value temp-color">--.- °C</span>
+              </div>
+              <div class="readout-item">
+                <span class="label">Độ ẩm đo được:</span>
+                <span id="dhtHumDisplay" class="value hum-color">--.- %</span>
+              </div>
+              <div class="readout-status">
+                <span class="pulse-indicator"></span> Tần suất đọc: 2s/lần
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Physical LED & Resistor Actuator Visual -->
+        <div class="hw-device-box led-actuator-box">
+          <div class="hw-device-header">
+            <span class="hw-title">Thiết Bị Chấp Hành (Actuator)</span>
+            <span class="hw-chip-badge">GPIO 4</span>
+          </div>
+          <div class="led-physical-visual">
+            <div class="component-setup">
+              <div id="physicalLedBulb" class="physical-led off">
+                <div class="led-dome"></div>
+                <div class="led-collar"></div>
+                <div class="led-legs">
+                  <span class="anode"></span>
+                  <span class="cathode"></span>
+                </div>
+              </div>
+              <div class="resistor-component" title="Điện trở hạn dòng 220 Ohm">
+                <span class="band b-red"></span>
+                <span class="band b-red"></span>
+                <span class="band b-brown"></span>
+                <span class="band b-gold"></span>
+                <small class="resistor-text">220 Ω</small>
+              </div>
+            </div>
+            <div class="led-control-panel">
+              <div class="state-badge-container">
+                Trạng thái: <strong id="ledStatusText" class="badge-off">TẮT (OFF)</strong>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="ledToggle">
+                <span class="slider round"></span>
+              </label>
+              <div class="actuator-btns">
+                <button id="btnTurnOn" class="btn btn-success btn-xs">BẬT ĐÈN</button>
+                <button id="btnTurnOff" class="btn btn-secondary btn-xs">TẮT ĐÈN</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Mosquitto Broker Server Rack Visual -->
+        <div class="hw-device-box broker-rack-box">
+          <div class="hw-device-header">
+            <span class="hw-title">Mosquitto Broker Server</span>
+            <span class="hw-chip-badge">Localhost / EMQX</span>
+          </div>
+          <div class="rack-chassis">
+            <div class="rack-unit">
+              <div class="rack-front">
+                <div class="rack-brand">
+                  <span class="mosq-logo">(((p)))</span>
+                  <strong>MOSQUITTO BROKER</strong>
+                </div>
+                <div class="rack-ports">
+                  <div class="port-meter">
+                    <span class="port-name">TCP 1883 (ESP32/Java)</span>
+                    <span id="meter1883" class="port-led active"></span>
+                  </div>
+                  <div class="port-meter">
+                    <span class="port-name">WS 9001 (WebSockets)</span>
+                    <span id="meter9001" class="port-led active"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="rack-stats">
+              <div class="stat-pill"><span class="stat-dot green"></span> QoS: 0, 1, 2</div>
+              <div class="stat-pill"><span class="stat-dot blue"></span> Auth: user1 / 123</div>
+              <div class="stat-pill"><span class="stat-dot purple"></span> Wildcards: +, #</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Grid: Analog Gauges & Wokwi LCD Display -->
     <div class="main-grid">
       <!-- Temperature Gauge Card -->
       <section class="card gauge-card">
         <div class="card-title">
           <span class="icon">🌡️</span>
-          <h3>Nhiệt Độ (Temperature)</h3>
+          <h3>Đồng Hồ Kim: Nhiệt Độ</h3>
+          <span id="tempBadgeAlert" class="badge-normal">Bình thường</span>
         </div>
         <div class="gauge-wrapper">
           <canvas id="tempGauge" width="220" height="220"></canvas>
@@ -84,7 +272,8 @@
       <section class="card gauge-card">
         <div class="card-title">
           <span class="icon">💧</span>
-          <h3>Độ Ẩm (Humidity)</h3>
+          <h3>Đồng Hồ Kim: Độ Ẩm</h3>
+          <span class="badge-normal">Dải chuẩn 40-70%</span>
         </div>
         <div class="gauge-wrapper">
           <canvas id="humGauge" width="220" height="220"></canvas>
@@ -100,41 +289,83 @@
         </div>
       </section>
 
-      <!-- Device Control Card -->
-      <section class="card control-card">
-        <div class="card-title">
-          <span class="icon">💡</span>
-          <h3>Điều Khiển Đèn LED (ESP32)</h3>
+      <!-- Wokwi Monitor Window Widget (Y chang Slide 2 trong bài giảng) -->
+      <section class="card wokwi-widget-card">
+        <div class="wokwi-window-header">
+          <div class="mac-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <span class="window-title">WOKWI TELEMETRY DISPLAY</span>
         </div>
-        <div class="control-body">
-          <div class="led-indicator-wrapper">
-            <div id="ledVisual" class="led-bulb off"></div>
-            <div class="led-state-label">Trạng thái: <strong id="ledStatusText">TẮT (OFF)</strong></div>
+        <div class="wokwi-widget-body">
+          <!-- Wokwi Temp Card -->
+          <div class="wokwi-card-item temp-item">
+            <div class="wokwi-card-left">
+              <span class="wokwi-icon">🌡️</span>
+              <div>
+                <div class="wokwi-label">Nhiệt độ</div>
+                <div id="wokwiTempValue" class="wokwi-value">--.- °C</div>
+              </div>
+            </div>
+            <div class="wokwi-sparkline">
+              <canvas id="sparklineTemp" width="100" height="40"></canvas>
+            </div>
           </div>
-          <div class="switch-container">
-            <label class="switch">
-              <input type="checkbox" id="ledToggle">
-              <span class="slider round"></span>
-            </label>
-            <span class="switch-hint">Gạt để BẬT / TẮT</span>
-          </div>
-          <div class="quick-btn-group">
-            <button id="btnTurnOn" class="btn btn-success">BẬT ĐÈN (ON)</button>
-            <button id="btnTurnOff" class="btn btn-secondary">TẮT ĐÈN (OFF)</button>
+
+          <!-- Wokwi Hum Card -->
+          <div class="wokwi-card-item hum-item">
+            <div class="wokwi-card-left">
+              <span class="wokwi-icon">💧</span>
+              <div>
+                <div class="wokwi-label">Độ ẩm</div>
+                <div id="wokwiHumValue" class="wokwi-value">--.- %</div>
+              </div>
+            </div>
+            <div class="wokwi-sparkline">
+              <canvas id="sparklineHum" width="100" height="40"></canvas>
+            </div>
           </div>
         </div>
-        <div class="control-footer">
-          <small>Topic: <code>esp32/led/command</code></small>
+        <div class="wokwi-widget-footer">
+          <small>Giao diện mô phỏng chuẩn theo Slide bài giảng Wokwi ESP32</small>
         </div>
       </section>
     </div>
+
+    <!-- Interactive MQTT Chat & Command Console -->
+    <section class="card chat-card">
+      <div class="chat-header">
+        <div class="card-title">
+          <span class="icon">💬</span>
+          <h3>PHÒNG CHAT & TRUYỀN THÔNG ĐIỆP MQTT (PUB / SUB CHAT CONSOLE)</h3>
+        </div>
+        <div class="chat-topic-selector">
+          <label for="chatTopicInput">Topic Chat:</label>
+          <input type="text" id="chatTopicInput" value="chat/room" placeholder="chat/room">
+        </div>
+      </div>
+      <div class="chat-body">
+        <div id="chatMessageList" class="chat-messages">
+          <div class="chat-item system-msg">
+            <span class="time">[Hệ thống]</span>
+            <span class="text">Chào mừng bạn đến với phòng Chat MQTT! Bạn có thể gõ tin nhắn ở đây hoặc mở CMD chạy <code>mosquitto_pub -h localhost -t "chat/room" -m "Nội dung"</code> để thấy tin nhắn xuất hiện tức thì!</span>
+          </div>
+        </div>
+        <div class="chat-input-bar">
+          <input type="text" id="chatTextInput" placeholder="Nhập tin nhắn để gửi qua MQTT (VD: Thầy ơi em test chat MQTT nè)...">
+          <button id="btnSendChat" class="btn btn-primary">Gửi (Publish)</button>
+        </div>
+      </div>
+    </section>
 
     <!-- Live Chart Section -->
     <section class="card chart-card">
       <div class="chart-header">
         <div class="card-title">
           <span class="icon">📈</span>
-          <h3>Biểu Đồ Biến Thiên Thời Gian Thực</h3>
+          <h3>Biểu Đồ Biến Thiên Cảm Biến Thời Gian Thực</h3>
         </div>
         <div class="chart-legend-custom">
           <span class="legend-item"><span class="legend-color temp-col"></span> Nhiệt Độ (°C)</span>
@@ -153,7 +384,10 @@
           <span class="icon">📜</span>
           <h3>Nhật Ký Thông Điệp MQTT Nhận Được</h3>
         </div>
-        <button id="btnClearLogs" class="btn btn-outline btn-sm">Xóa Nhật Ký</button>
+        <div class="logs-actions">
+          <button id="btnExportCsv" class="btn btn-outline btn-sm">📥 Xuất Báo Cáo CSV</button>
+          <button id="btnClearLogs" class="btn btn-outline btn-sm">Xóa Nhật Ký</button>
+        </div>
       </div>
       <div class="table-wrapper">
         <table id="logTable" class="log-table">
@@ -175,7 +409,8 @@
 
     <!-- Footer -->
     <footer class="footer">
-      <p>Hệ thống IoT - Trường Đại Học Sài Gòn (SGU) | Kiến trúc Wokwi ESP32 + Mosquitto + Web Dashboard + Java Client</p>
+      <p>Trường Đại Học Sài Gòn (SGU) • Khoa Công Nghệ Thông Tin | Kỹ Thuật IoT • GV: Trần Minh Nhật</p>
+      <p class="footer-sub">Hệ thống IoT phối hợp 4 thành phần: ESP32 Firmware (Wokwi) + Mosquitto Broker + Web Dashboard + Java Desktop Client</p>
     </footer>
   </div>
 
