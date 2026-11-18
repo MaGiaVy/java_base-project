@@ -5,6 +5,7 @@
   "parts": [
     { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
     { "type": "wokwi-dht22", "id": "dht22", "top": -80, "left": 180, "attrs": { "temperature": "28.6", "humidity": "62.4" } },
+    { "type": "wokwi-slide-switch", "id": "sw1", "top": 40, "left": 195, "attrs": { "value": "", "bounce": "0" } },
     { "type": "wokwi-led", "id": "led1", "top": 120, "left": 200, "attrs": { "color": "red" } },
     { "type": "wokwi-resistor", "id": "r1", "top": 180, "left": 140, "attrs": { "resistance": "220" } }
   ],
@@ -14,6 +15,8 @@
     [ "esp:GND.1", "dht22:GND", "black", [ "v0" ] ],
     [ "esp:3V3", "dht22:VCC", "red", [ "v0" ] ],
     [ "esp:16", "dht22:SDA", "green", [ "v0" ] ],
+    [ "esp:14", "sw1:2", "orange", [ "v0" ] ],
+    [ "sw1:1", "esp:GND.2", "black", [ "v0" ] ],
     [ "esp:4", "r1:1", "blue", [ "v0" ] ],
     [ "r1:2", "led1:A", "blue", [ "v0" ] ],
     [ "led1:C", "esp:GND.2", "black", [ "v0" ] ]

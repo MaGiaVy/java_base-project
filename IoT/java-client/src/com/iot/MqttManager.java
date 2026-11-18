@@ -27,7 +27,17 @@ public class MqttManager {
             client.close();
         }
 
-        client = new MqttClient(brokerUrl, clientId, new MemoryPersistence());
+        String effectiveUrl = brokerUrl;
+        if ("tcp://localhost:1883".equalsIgnoreCase(brokerUrl)
+                || "tcp://127.0.0.1:1883".equalsIgnoreCase(brokerUrl)) {
+            try (java.net.Socket probe = new java.net.Socket()) {
+                probe.connect(new java.net.InetSocketAddress("127.0.0.2", 1883), 150);
+                effectiveUrl = "tcp://127.0.0.2:1883";
+            } catch (Exception ignored) {
+            }
+        }
+
+        client = new MqttClient(effectiveUrl, clientId, new MemoryPersistence());
 
         MqttConnectOptions options = new MqttConnectOptions();
         options.setCleanSession(true);

@@ -22,6 +22,7 @@ class TestFirmwareSyntax(unittest.TestCase):
         part_types = [p.get('type') for p in data.get('parts', [])]
         self.assertIn('board-esp32-devkit-c-v4', part_types)
         self.assertIn('wokwi-dht22', part_types)
+        self.assertIn('wokwi-slide-switch', part_types)
         self.assertIn('wokwi-led', part_types)
         self.assertIn('wokwi-resistor', part_types)
 
@@ -36,6 +37,8 @@ class TestFirmwareSyntax(unittest.TestCase):
         self.assertIn('16', code)
         self.assertIn('LEDPIN', code)
         self.assertIn('4', code)
+        self.assertIn('MODE_SWITCH_PIN', code)
+        self.assertIn('14', code)
 
         # Check topics
         self.assertIn('esp32/sensor/dht22/data', code)

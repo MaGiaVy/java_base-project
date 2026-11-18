@@ -37,6 +37,7 @@ let currentTemp = 28.6;
 let currentHum = 62.4;
 let isLedOn = false;
 let isAutoLedMode = true;
+let autoLedTriggered = false;
 let realTimeChart = null;
 let isAudioEnabled = true;
 let audioCtx = null;
@@ -360,14 +361,16 @@ function updateTelemetry(temp, hum) {
         alertBadge.className = 'badge-alert';
         triggerWarningSound();
         if (isAutoLedMode && !isLedOn) {
-          updateLedUI('ON');
+          autoLedTriggered = true;
+          sendLedCommand('ON');
           appendLog('system/alert', `[Tự động] Nhiệt độ ${tempStr}°C > 35°C -> Bật đèn LED cảnh báo!`);
         }
       } else {
         alertBadge.textContent = 'Bình thường';
         alertBadge.className = 'badge-normal';
-        if (isAutoLedMode && isLedOn) {
-          updateLedUI('OFF');
+        if (isAutoLedMode && autoLedTriggered) {
+          autoLedTriggered = false;
+          if (isLedOn) sendLedCommand('OFF');
           appendLog('system/normal', `[Tự động] Nhiệt độ ${tempStr}°C hạ nhiệt -> Tắt đèn LED!`);
         }
       }
@@ -734,7 +737,7 @@ function initApp() {
   const btnSimDefault = document.getElementById('simSlideDefault');
   if (btnSimDefault) {
     btnSimDefault.addEventListener('click', () => {
-      const payload = JSON.stringify({ temp: 28.6, hum: 62.4 });
+      const payload = JSON.stringify({ temperature: 28.6, humidity: 62.4, temp: 28.6, hum: 62.4 });
       if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
       updateTelemetry(28.6, 62.4);
       appendLog(TOPICS.LEGACY_TELEMETRY, payload);
@@ -744,7 +747,7 @@ function initApp() {
   const btnSimOverheat = document.getElementById('simOverheat');
   if (btnSimOverheat) {
     btnSimOverheat.addEventListener('click', () => {
-      const payload = JSON.stringify({ temp: 39.2, hum: 78.0 });
+      const payload = JSON.stringify({ temperature: 39.2, humidity: 78.0, temp: 39.2, hum: 78.0 });
       if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
       updateTelemetry(39.2, 78.0);
       appendLog(TOPICS.LEGACY_TELEMETRY, payload);
@@ -754,7 +757,7 @@ function initApp() {
   const btnSimCool = document.getElementById('simCool');
   if (btnSimCool) {
     btnSimCool.addEventListener('click', () => {
-      const payload = JSON.stringify({ temp: 20.5, hum: 50.0 });
+      const payload = JSON.stringify({ temperature: 20.5, humidity: 50.0, temp: 20.5, hum: 50.0 });
       if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
       updateTelemetry(20.5, 50.0);
       appendLog(TOPICS.LEGACY_TELEMETRY, payload);

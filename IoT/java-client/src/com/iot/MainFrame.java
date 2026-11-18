@@ -45,6 +45,7 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
     private JLabel lblLedStatus;
     private JButton btnLedOn;
     private JButton btnLedOff;
+    private boolean autoLedTriggered = false;
 
     // UI Elements - Logs & Export
     private DefaultTableModel tableModel;
@@ -368,13 +369,13 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
             double temp = Double.NaN;
             double hum = Double.NaN;
 
-            Pattern pTemp = Pattern.compile("\"temperature\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
+            Pattern pTemp = Pattern.compile("\"(?:temperature|temp)\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
             Matcher mTemp = pTemp.matcher(payload);
             if (mTemp.find()) {
                 temp = Double.parseDouble(mTemp.group(1));
             }
 
-            Pattern pHum = Pattern.compile("\"humidity\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
+            Pattern pHum = Pattern.compile("\"(?:humidity|hum)\"\\s*:\\s*([+-]?[0-9]*\\.?[0-9]+)");
             Matcher mHum = pHum.matcher(payload);
             if (mHum.find()) {
                 hum = Double.parseDouble(mHum.group(1));
@@ -390,10 +391,22 @@ public class MainFrame extends JFrame implements MqttManager.MqttListener {
                         pnlTempCard.setBackground(new Color(153, 27, 27));
                         lblTempAlert.setText("⚠ CẢNH BÁO: NHIỆT ĐỘ QUÁ CAO (> 35°C)!");
                         lblTempAlert.setForeground(new Color(254, 202, 202));
+                        if (!autoLedTriggered) {
+                            autoLedTriggered = true;
+                            if (!lblLedStatus.getText().contains("BẬT")) {
+                                sendLedCommand("ON");
+                            }
+                        }
                     } else {
                         pnlTempCard.setBackground(new Color(30, 41, 59));
                         lblTempAlert.setText("Trạng thái: An toàn (Bình thường)");
                         lblTempAlert.setForeground(new Color(148, 163, 184));
+                        if (autoLedTriggered) {
+                            autoLedTriggered = false;
+                            if (lblLedStatus.getText().contains("BẬT")) {
+                                sendLedCommand("OFF");
+                            }
+                        }
                     }
                 }
                 if (!Double.isNaN(finalHum)) {

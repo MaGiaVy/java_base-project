@@ -11,9 +11,10 @@
 #include <ArduinoJson.h>
 
 // --- Cấu hình Chân Phần Cứng (Hardware Pins) ---
-#define DHTPIN 16         // Chân dữ liệu cảm biến DHT22
-#define LEDPIN 4          // Chân điều khiển đèn LED đỏ ngoài (qua trở 220 Ohm)
-#define LED_BUILTIN_PIN 2 // Đèn LED xanh tích hợp sẵn trên bo ESP32
+#define DHTPIN 16          // Chân dữ liệu cảm biến DHT22
+#define LEDPIN 4           // Chân điều khiển đèn LED đỏ ngoài (qua trở 220 Ohm)
+#define LED_BUILTIN_PIN 2  // Đèn LED xanh tích hợp sẵn trên bo ESP32
+#define MODE_SWITCH_PIN 14 // Công tắc gạt: Trái (LOW) = AUTO tự thu | Phải (HIGH) = MANUAL kéo tay
 
 // --- Cấu hình Mạng Wi-Fi Wokwi ---
 const char* ssid = "Wokwi-GUEST";
@@ -41,6 +42,9 @@ DHTesp dht;
 
 unsigned long lastMsgTime = 0;
 const unsigned long MSG_INTERVAL = 2000; // Đọc & gửi cảm biến mỗi 2 giây
+const float TEMP_ALERT_THRESHOLD = 35.0; // Ngưỡng quá nhiệt tự bật đèn LED cảnh báo
+bool highTempAutoLed = false;
+bool lastManualMode = false;
 
 // --- Hàm xử lý khi nhận lệnh từ Broker (Subscriber) ---
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -111,15 +115,18 @@ void setup() {
   Serial.println(" KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT ESP32 TRÊN WOKWI");
   Serial.println("==================================================");
 
-  // Cấu hình chân GPIO LED làm ngõ ra
+  // Cấu hình chân GPIO LED làm ngõ ra & công tắc chế độ AUTO/MANUAL
   pinMode(LEDPIN, OUTPUT);
   pinMode(LED_BUILTIN_PIN, OUTPUT);
+  pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
+  lastManualMode = (digitalRead(MODE_SWITCH_PIN) == HIGH);
+  randomSeed(esp_random());
   digitalWrite(LEDPIN, LOW);
   digitalWrite(LED_BUILTIN_PIN, LOW);
 
   // Khởi tạo cảm biến DHT22
   dht.setup(DHTPIN, DHTesp::DHT22);
-  Serial.println("[SETUP] Cảm biến DHT22 đã sẵn sàng tại chân GPIO 16.");
+  Serial.println("[SETUP] Cảm biến DHT22 sẵn sàng (GPIO 16) | Switch AUTO/MANUAL (GPIO 14).");
 
   // Kết nối Wi-Fi
   Serial.print("[WIFI] Đang kết nối tới ");
@@ -144,6 +151,14 @@ void loop() {
   }
   client.loop();
 
+  bool isManualMode = (digitalRead(MODE_SWITCH_PIN) == HIGH);
+  if (isManualMode != lastManualMode) {
+    lastManualMode = isManualMode;
+    Serial.println(isManualMode
+      ? "[MODE] KÉO TAY (MANUAL) -> Đọc trực tiếp giá trị bạn kéo trên DHT22"
+      : "[MODE] TỰ ĐỘNG (AUTO) -> Tự thu cảm biến kèm dao động mỗi 2 giây");
+  }
+
   unsigned long now = millis();
   if (now - lastMsgTime > MSG_INTERVAL) {
     lastMsgTime = now;
@@ -156,10 +171,20 @@ void loop() {
       return;
     }
 
+    float outTemp = data.temperature;
+    float outHum = data.humidity;
+    if (!isManualMode) {
+      // Chế độ AUTO: lấy giá trị nền DHT22 kết hợp dao động nhẹ để số tự nhảy liên tục
+      outTemp = constrain(outTemp + random(-15, 26) / 10.0, -40.0, 80.0);
+      outHum = constrain(outHum + random(-30, 31) / 10.0, 0.0, 100.0);
+    }
+    outTemp = round(outTemp * 10.0) / 10.0;
+    outHum = round(outHum * 10.0) / 10.0;
+
     // Đóng gói JSON payload an toàn (tránh dangling pointer của temporary String)
     StaticJsonDocument<128> doc;
-    doc["temperature"] = round(data.temperature * 10.0) / 10.0;
-    doc["humidity"] = round(data.humidity * 10.0) / 10.0;
+    doc["temperature"] = outTemp;
+    doc["humidity"] = outHum;
 
     char jsonBuffer[128];
     serializeJson(doc, jsonBuffer);
@@ -168,8 +193,23 @@ void loop() {
     client.publish(TOPIC_TELEMETRY, jsonBuffer);
     client.publish(TOPIC_LEGACY_TELEMETRY, jsonBuffer);
 
+    // Tự động bật/tắt đèn LED khi nhiệt độ vượt ngưỡng cảnh báo (> 35°C)
+    if (outTemp > TEMP_ALERT_THRESHOLD && !highTempAutoLed) {
+      highTempAutoLed = true;
+      digitalWrite(LEDPIN, HIGH);
+      digitalWrite(LED_BUILTIN_PIN, HIGH);
+      client.publish(TOPIC_LED_CMD, "ON");
+      Serial.println("[ESP32] [CẢNH BÁO] Nhiệt độ > 35°C -> Tự động BẬT đèn LED!");
+    } else if (outTemp <= TEMP_ALERT_THRESHOLD && highTempAutoLed) {
+      highTempAutoLed = false;
+      digitalWrite(LEDPIN, LOW);
+      digitalWrite(LED_BUILTIN_PIN, LOW);
+      client.publish(TOPIC_LED_CMD, "OFF");
+      Serial.println("[ESP32] Nhiệt độ hạ ngưỡng -> Tự động TẮT đèn LED!");
+    }
+
     // In thông điệp ra Serial Monitor đúng chuẩn demo
-    Serial.print("MQTT -> ");
+    Serial.print(isManualMode ? "[MANUAL] MQTT -> " : "[AUTO] MQTT -> ");
     Serial.print(TOPIC_TELEMETRY);
     Serial.print(": ");
     Serial.println(jsonBuffer);
