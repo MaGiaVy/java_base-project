@@ -10,3 +10,6 @@ bin/
 # Temporary / Scratch
 scratch/
 *.log
+
+# PlatformIO build artifacts
+.pio/

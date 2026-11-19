@@ -508,16 +508,19 @@ function connectMQTT() {
       updateConnectionUI(true, 'Đã kết nối (Online)');
       appendLog('system/status', `Kết nối thành công! ClientID: ${clientId}`);
 
-      // Đăng ký các topic hệ thống & phòng chat
-      const subscribeTopics = [
-        TOPICS.TELEMETRY,
-        TOPICS.LEGACY_TELEMETRY,
-        TOPICS.SENSOR_ALL,
-        TOPICS.LED_CMD,
-        TOPICS.STATUS,
-        TOPICS.CHAT_ALL,
-        'test/#'
-      ];
+      // Trên Public EMQX chỉ đăng ký 3 topic của dự án để đồng bộ sạch với Java Client & Wokwi
+      const isPublicBroker = url.includes('emqx.io');
+      const subscribeTopics = isPublicBroker
+        ? [TOPICS.TELEMETRY, TOPICS.LED_CMD, TOPICS.STATUS]
+        : [
+            TOPICS.TELEMETRY,
+            TOPICS.LEGACY_TELEMETRY,
+            TOPICS.SENSOR_ALL,
+            TOPICS.LED_CMD,
+            TOPICS.STATUS,
+            TOPICS.CHAT_ALL,
+            'test/#'
+          ];
 
       subscribeTopics.forEach(top => {
         mqttClient.subscribe(top, (err) => {
@@ -734,35 +737,21 @@ function initApp() {
   }
 
   // 6. Thanh công cụ Test nhanh (Simulation Presets)
+  const publishSimPreset = (temp, hum) => {
+    const payload = JSON.stringify({ temperature: temp, humidity: hum, temp: temp, hum: hum });
+    if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.TELEMETRY, payload);
+    updateTelemetry(temp, hum);
+    appendLog(TOPICS.TELEMETRY, payload);
+  };
+
   const btnSimDefault = document.getElementById('simSlideDefault');
-  if (btnSimDefault) {
-    btnSimDefault.addEventListener('click', () => {
-      const payload = JSON.stringify({ temperature: 28.6, humidity: 62.4, temp: 28.6, hum: 62.4 });
-      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
-      updateTelemetry(28.6, 62.4);
-      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
-    });
-  }
+  if (btnSimDefault) btnSimDefault.addEventListener('click', () => publishSimPreset(28.6, 62.4));
 
   const btnSimOverheat = document.getElementById('simOverheat');
-  if (btnSimOverheat) {
-    btnSimOverheat.addEventListener('click', () => {
-      const payload = JSON.stringify({ temperature: 39.2, humidity: 78.0, temp: 39.2, hum: 78.0 });
-      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
-      updateTelemetry(39.2, 78.0);
-      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
-    });
-  }
+  if (btnSimOverheat) btnSimOverheat.addEventListener('click', () => publishSimPreset(39.2, 78.0));
 
   const btnSimCool = document.getElementById('simCool');
-  if (btnSimCool) {
-    btnSimCool.addEventListener('click', () => {
-      const payload = JSON.stringify({ temperature: 20.5, humidity: 50.0, temp: 20.5, hum: 50.0 });
-      if (mqttClient && mqttClient.connected) mqttClient.publish(TOPICS.LEGACY_TELEMETRY, payload);
-      updateTelemetry(20.5, 50.0);
-      appendLog(TOPICS.LEGACY_TELEMETRY, payload);
-    });
-  }
+  if (btnSimCool) btnSimCool.addEventListener('click', () => publishSimPreset(20.5, 50.0));
 
   const btnSimLed = document.getElementById('simToggleLed');
   if (btnSimLed) {
