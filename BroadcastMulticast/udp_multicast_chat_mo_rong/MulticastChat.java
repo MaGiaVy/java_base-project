@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class MulticastChat {
     private static final int PORT = 8000;
-    private static final int TTL = 1;
+    private static final int TTL = 32;
     private static final int MAX_PACKET = 16 * 1024;
     private static final int MAX_RESEND_RANGE = 50;
     private static final int CACHE_LIMIT = 500;
@@ -439,6 +439,7 @@ public class MulticastChat {
         InetAddress group = InetAddress.getByName(room.group);
         DatagramPacket packet = new DatagramPacket(data, data.length, group, PORT);
         synchronized (socket) {
+            try { socket.setNetworkInterface(networkInterface); } catch (Exception ignored) { }
             socket.send(packet);
         }
     }

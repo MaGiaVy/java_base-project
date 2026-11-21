@@ -150,6 +150,17 @@ public class MqttBrokerServer {
     private ServerSocket wsServerSocket;
     private ExecutorService executor;
 
+    // Quản lý cơ sở dữ liệu PostgreSQL (Tùy chọn: tự động ghi nhận cảm biến & đèn LED)
+    private DatabaseManager dbManager = null;
+
+    public void setDatabaseManager(DatabaseManager dbManager) {
+        this.dbManager = dbManager;
+    }
+
+    public DatabaseManager getDatabaseManager() {
+        return this.dbManager;
+    }
+
     public MqttBrokerServer() {
         this(1883, 9001, null);
     }
@@ -554,6 +565,9 @@ public class MqttBrokerServer {
         totalMessages.incrementAndGet();
         routePublish(topic, payload, qos, false);
 
+        // [TỰ ĐỘNG GHI NHẬN VÀO POSTGRESQL DATABASE]
+        recordToDatabase(topic, payload, session.clientId);
+
         if (qos == 1) {
             session.sendMqttPacket(new byte[]{
                     0x40, 0x02, (byte) ((packetId >> 8) & 0xFF), (byte) (packetId & 0xFF)
@@ -568,6 +582,78 @@ public class MqttBrokerServer {
         }
         emitLog("PUBLISH", session.clientId, topic,
                 preview + (retain ? " [RETAIN]" : "") + (qos > 0 ? " [QoS" + qos + "]" : ""));
+    }
+
+    /**
+     * Tự động trích xuất gói tin JSON và lưu vào cơ sở dữ liệu PostgreSQL.
+     * Phương thức này chạy ngầm (async) qua DatabaseManager nên không bao giờ làm nghẽn Broker.
+     */
+    private void recordToDatabase(String topic, byte[] payload, String clientId) {
+        if (dbManager == null || !dbManager.isConnected() || payload == null || payload.length == 0) {
+            return;
+        }
+
+        try {
+            String content = new String(payload, StandardCharsets.UTF_8).trim();
+
+            // 1. Trường hợp là bản tin dữ liệu cảm biến DHT22
+            if ("esp32/sensor/dht22/data".equals(topic) || "sensor/data".equals(topic) || topic.contains("sensor")) {
+                Double temp = extractJsonNumber(content, "temperature", "temp");
+                Double hum = extractJsonNumber(content, "humidity", "hum");
+                Double heatIndex = extractJsonNumber(content, "heat_index", "heatIndex");
+                String deviceId = extractJsonString(content, "device_id", "deviceId", "clientId", "device");
+                if (deviceId == null || deviceId.isEmpty()) {
+                    deviceId = (clientId != null && !clientId.isEmpty()) ? clientId : "ESP32-DHT22";
+                }
+
+                if (temp != null && hum != null) {
+                    if (heatIndex == null) {
+                        heatIndex = temp; // Nếu gói tin không có heat_index thì tạm gán bằng temp
+                    }
+                    dbManager.saveSensorDataAsync(deviceId, temp, hum, heatIndex, topic);
+                }
+            }
+            // 2. Trường hợp là bản tin điều khiển hoặc phản hồi trạng thái đèn LED
+            else if ("esp32/actuator/led/control".equals(topic) || "esp32/actuator/led/status".equals(topic) || topic.contains("led")) {
+                String cmd = extractJsonString(content, "command", "state", "status", "action");
+                if (cmd == null || cmd.isEmpty()) {
+                    if (content.equalsIgnoreCase("ON") || content.equalsIgnoreCase("OFF")) {
+                        cmd = content.toUpperCase();
+                    } else {
+                        cmd = "TOGGLE";
+                    }
+                }
+                String deviceId = "ESP32-LED";
+                String triggeredBy = (clientId != null && !clientId.isEmpty()) ? clientId : "CLIENT";
+                dbManager.saveActuatorLogAsync(deviceId, cmd, triggeredBy, topic);
+            }
+        } catch (Exception ignored) {
+            // Không bao giờ để lỗi ngoại lệ làm ảnh hưởng tới việc định tuyến gói tin MQTT
+        }
+    }
+
+    private static Double extractJsonNumber(String json, String... keys) {
+        for (String key : keys) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*([0-9.-]+)");
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) {
+                try {
+                    return Double.parseDouble(m.group(1));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private static String extractJsonString(String json, String... keys) {
+        for (String key : keys) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*\"([^\"]+)\"");
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) {
+                return m.group(1);
+            }
+        }
+        return null;
     }
 
     private void handleSubscribe(ClientSession session, byte[] body) throws IOException {

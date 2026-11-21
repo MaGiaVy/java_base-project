@@ -1,0 +1,13 @@
+# Copy file này thành server.properties (cùng thư mục) rồi điền mật khẩu.
+# server.properties đã nằm trong .gitignore -> không bị đẩy lên git.
+port=9000
+keystore.path=server/certs/server.p12
+keystore.password=zalolite-lab
+
+db.url=jdbc:postgresql://localhost:5432/zalolite
+db.user=postgres
+db.password=
+
+# Dùng cho OTP quên mật khẩu (Ngày 6). Để trống thì OTP in ra console server.
+mail.user=
+mail.appPassword=

@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MulticastChatGUI extends JFrame {
     private static final int PORT = 8000;
     private static final int BC_PORT = 8001;
-    private static final int TTL = 1;
+    private static final int TTL = 32;
     private static final int MAX_PACKET = 16 * 1024;
     private static final int MAX_RESEND_RANGE = 50;
     private static final int CACHE_LIMIT = 500;
@@ -1040,7 +1040,10 @@ public class MulticastChatGUI extends JFrame {
         byte[] data = wire.getBytes(StandardCharsets.UTF_8);
         if (data.length > MAX_PACKET) throw new IllegalArgumentException("Tin nhắn quá dài.");
         DatagramPacket packet = new DatagramPacket(data, data.length, InetAddress.getByName(room.group), PORT);
-        synchronized (socket) { socket.send(packet); }
+        synchronized (socket) {
+            try { socket.setNetworkInterface(networkInterface); } catch (Exception ignored) { }
+            socket.send(packet);
+        }
     }
 
     // =====================================================================

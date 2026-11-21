@@ -2,6 +2,7 @@ package com.iot.broker;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
@@ -11,6 +12,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.geom.RoundRectangle2D;
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -61,12 +63,31 @@ public class BrokerFrame extends JFrame implements MqttBrokerServer.BrokerListen
     private DefaultTableModel clientsModel;
     private DefaultTableModel logsModel;
 
+    // Quản lý cơ sở dữ liệu PostgreSQL và giao diện bảng lịch sử
+    private DatabaseManager dbManager;
+    private PillLabel lblDbBadge;
+    private DefaultTableModel dbSensorModel;
+    private DefaultTableModel dbActuatorModel;
+    private JLabel lblDbStats;
+    private RoundedButton btnRefreshDb;
+    private RoundedButton btnExportDocx;
+    private RoundedButton btnConfigDb;
+
     public BrokerFrame(int tcpPort, int wsPort) {
         this.server = new MqttBrokerServer(tcpPort, wsPort, this);
         this.autoPublishTimer = new Timer(2000, e -> sendSampleTelemetry());
         this.autoPublishTimer.setInitialDelay(0);
+
+        // Khởi tạo đối tượng DatabaseManager và kết nối tới PostgreSQL
+        this.dbManager = new DatabaseManager();
+        this.dbManager.connect("localhost", 5432, "postgres", "postgres", "M@giavy265");
+        this.server.setDatabaseManager(this.dbManager);
+
         initUI();
         startBroker();
+
+        // Tự động tải dữ liệu ban đầu lên bảng Database nếu đã kết nối
+        refreshDatabaseTables();
     }
 
     private void initUI() {
@@ -81,7 +102,12 @@ public class BrokerFrame extends JFrame implements MqttBrokerServer.BrokerListen
             @Override
             public void windowClosing(WindowEvent e) {
                 stopAutoPublish();
-                server.stop();
+                if (server != null) {
+                    server.stop();
+                }
+                if (dbManager != null) {
+                    dbManager.disconnect();
+                }
                 dispose();
                 System.exit(0);
             }
@@ -117,9 +143,14 @@ public class BrokerFrame extends JFrame implements MqttBrokerServer.BrokerListen
         lblStatusBadge = new PillLabel(" ● ĐANG KHỞI ĐỘNG ", new Color(254, 243, 199), new Color(180, 83, 9), new Color(252, 211, 77));
         lblStatusBadge.setFont(new Font("Segoe UI", Font.BOLD, 12));
 
-        JPanel badgeWrap = new JPanel(new GridBagLayout());
+        lblDbBadge = new PillLabel(" ● POSTGRESQL ", EMERALD_BG, EMERALD_DARK, new Color(134, 239, 172));
+        lblDbBadge.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        updateDbBadge();
+
+        JPanel badgeWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         badgeWrap.setOpaque(false);
         badgeWrap.add(lblStatusBadge);
+        badgeWrap.add(lblDbBadge);
 
         headerPanel.add(titleStack, BorderLayout.CENTER);
         headerPanel.add(badgeWrap, BorderLayout.EAST);
@@ -236,10 +267,17 @@ public class BrokerFrame extends JFrame implements MqttBrokerServer.BrokerListen
         splitPane.setBackground(BG_CANVAS);
         splitPane.setBorder(null);
 
+        // Bổ sung JTabbedPane chứa cả luồng Điều phối thời gian thực và Lịch sử Database PostgreSQL
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabbedPane.setBackground(BG_CANVAS);
+        tabbedPane.addTab("  ⚡ Điều Phối Bản Tin Thời Gian Thực  ", splitPane);
+        tabbedPane.addTab("  🗄️ Lịch Sử Cơ Sở Dữ Liệu PostgreSQL & Báo Cáo  ", createDatabaseTab());
+
         JPanel bodyPanel = new JPanel(new BorderLayout(12, 12));
         bodyPanel.setBackground(BG_CANVAS);
         bodyPanel.add(cardsGrid, BorderLayout.NORTH);
-        bodyPanel.add(splitPane, BorderLayout.CENTER);
+        bodyPanel.add(tabbedPane, BorderLayout.CENTER);
 
         mainPanel.add(topContainer, BorderLayout.NORTH);
         mainPanel.add(bodyPanel, BorderLayout.CENTER);
@@ -426,6 +464,265 @@ public class BrokerFrame extends JFrame implements MqttBrokerServer.BrokerListen
         logsModel.insertRow(0, new Object[]{time, type, clientId, topic, detail});
         while (logsModel.getRowCount() > 500) {
             logsModel.removeRow(logsModel.getRowCount() - 1);
+        }
+    }
+
+    /**
+     * Tạo giao diện Tab 2: Lịch sử Cơ sở Dữ liệu PostgreSQL và Xuất Báo cáo Word (.docx)
+     */
+    private JPanel createDatabaseTab() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBackground(BG_CANVAS);
+        panel.setBorder(new EmptyBorder(8, 0, 0, 0));
+
+        // Thanh công cụ thao tác trên cơ sở dữ liệu
+        JPanel bar = new JPanel(new BorderLayout(8, 8));
+        bar.setOpaque(false);
+
+        JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        leftBtns.setOpaque(false);
+
+        btnRefreshDb = new RoundedButton("🔄 Làm Mới Dữ Liệu", TEXT_BLACK, CHARCOAL_HOVER, Color.WHITE, null);
+        btnExportDocx = new RoundedButton("📄 Xuất Báo Cáo Word (.docx)", new Color(29, 78, 216), new Color(30, 64, 175), Color.WHITE, null);
+        btnConfigDb = new RoundedButton("⚙️ Cấu Hình PostgreSQL", BTN_MUTED_BG, BTN_MUTED_HOVER, TEXT_BLACK, BORDER_LIGHT);
+
+        leftBtns.add(btnRefreshDb);
+        leftBtns.add(btnExportDocx);
+        leftBtns.add(btnConfigDb);
+
+        lblDbStats = new JLabel("Chưa tải dữ liệu | Nhấn 'Làm Mới' để xem bản ghi từ PostgreSQL");
+        lblDbStats.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblDbStats.setForeground(TEXT_MUTED);
+        lblDbStats.setBorder(new EmptyBorder(0, 8, 0, 8));
+
+        bar.add(leftBtns, BorderLayout.WEST);
+        bar.add(lblDbStats, BorderLayout.EAST);
+
+        // Bảng 1: Lịch sử cảm biến DHT22
+        dbSensorModel = new DefaultTableModel(
+                new Object[]{"ID", "Thời Gian Ghi", "Thiết Bị", "Nhiệt Độ (°C)", "Độ Ẩm (%)", "Chỉ Số Nhiệt (°C)", "MQTT Topic"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int col) {
+                return false;
+            }
+        };
+        JTable tblSensor = createStyledTable(dbSensorModel, false);
+        tblSensor.getColumnModel().getColumn(0).setPreferredWidth(60);
+        tblSensor.getColumnModel().getColumn(1).setPreferredWidth(160);
+        tblSensor.getColumnModel().getColumn(2).setPreferredWidth(120);
+        tblSensor.getColumnModel().getColumn(3).setPreferredWidth(100);
+        tblSensor.getColumnModel().getColumn(4).setPreferredWidth(100);
+        tblSensor.getColumnModel().getColumn(5).setPreferredWidth(110);
+        tblSensor.getColumnModel().getColumn(6).setPreferredWidth(200);
+
+        JPanel sensorCard = wrapTableCard("BẢNG 1: LỊCH SỬ DỮ LIỆU CẢM BIẾN (sensor_data) TỪ ESP32", tblSensor);
+
+        // Bảng 2: Lịch sử điều khiển đèn LED
+        dbActuatorModel = new DefaultTableModel(
+                new Object[]{"ID", "Thời Gian Ghi", "Thiết Bị", "Lệnh Điều Khiển", "Nguồn Kích Hoạt", "MQTT Topic"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int col) {
+                return false;
+            }
+        };
+        JTable tblActuator = createStyledTable(dbActuatorModel, false);
+        tblActuator.getColumnModel().getColumn(0).setPreferredWidth(60);
+        tblActuator.getColumnModel().getColumn(1).setPreferredWidth(160);
+        tblActuator.getColumnModel().getColumn(2).setPreferredWidth(120);
+        tblActuator.getColumnModel().getColumn(3).setPreferredWidth(120);
+        tblActuator.getColumnModel().getColumn(4).setPreferredWidth(140);
+        tblActuator.getColumnModel().getColumn(5).setPreferredWidth(200);
+
+        JPanel actuatorCard = wrapTableCard("BẢNG 2: LỊCH SỬ ĐIỀU KHIỂN & TRẠNG THÁI THIẾT BỊ (actuator_logs)", tblActuator);
+
+        JSplitPane dbSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sensorCard, actuatorCard);
+        dbSplit.setDividerLocation(240);
+        dbSplit.setResizeWeight(0.6);
+        dbSplit.setBackground(BG_CANVAS);
+        dbSplit.setBorder(null);
+
+        panel.add(bar, BorderLayout.NORTH);
+        panel.add(dbSplit, BorderLayout.CENTER);
+
+        // Đăng ký sự kiện các nút
+        btnRefreshDb.addActionListener(e -> refreshDatabaseTables());
+        btnExportDocx.addActionListener(e -> exportDocxReport());
+        btnConfigDb.addActionListener(e -> showDbConfigDialog());
+
+        return panel;
+    }
+
+    /**
+     * Cập nhật màu sắc và trạng thái huy hiệu PostgreSQL trên thanh tiêu đề
+     */
+    private void updateDbBadge() {
+        if (lblDbBadge == null) return;
+        if (dbManager != null && dbManager.isConnected()) {
+            lblDbBadge.setText(" ● POSTGRESQL: ĐÃ KẾT NỐI (5432) ");
+            lblDbBadge.setPillColors(EMERALD_BG, EMERALD_DARK, new Color(134, 239, 172));
+        } else {
+            lblDbBadge.setText(" ● POSTGRESQL: CHƯA KẾT NỐI ");
+            lblDbBadge.setPillColors(CRIMSON_BG, CRIMSON_DARK, new Color(252, 165, 165));
+        }
+    }
+
+    /**
+     * Tải dữ liệu mới nhất từ PostgreSQL lên 2 bảng giao diện
+     */
+    private void refreshDatabaseTables() {
+        if (dbManager == null || !dbManager.isConnected()) {
+            updateDbBadge();
+            if (lblDbStats != null) {
+                lblDbStats.setText("PostgreSQL chưa kết nối! Nhấn 'Cấu Hình PostgreSQL' để kết nối.");
+            }
+            return;
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            updateDbBadge();
+
+            // 1. Tải dữ liệu cảm biến
+            List<DatabaseManager.SensorRecord> sensors = dbManager.getRecentSensorData(100);
+            if (dbSensorModel != null) {
+                dbSensorModel.setRowCount(0);
+                for (DatabaseManager.SensorRecord r : sensors) {
+                    dbSensorModel.addRow(new Object[]{
+                            r.id,
+                            r.recordedAt,
+                            r.deviceId,
+                            String.format(Locale.US, "%.1f", r.temperature),
+                            String.format(Locale.US, "%.1f", r.humidity),
+                            String.format(Locale.US, "%.1f", r.heatIndex),
+                            r.topic
+                    });
+                }
+            }
+
+            // 2. Tải dữ liệu điều khiển đèn LED
+            List<DatabaseManager.ActuatorRecord> actuators = dbManager.getRecentActuatorLogs(50);
+            if (dbActuatorModel != null) {
+                dbActuatorModel.setRowCount(0);
+                for (DatabaseManager.ActuatorRecord r : actuators) {
+                    dbActuatorModel.addRow(new Object[]{
+                            r.id,
+                            r.recordedAt,
+                            r.deviceId,
+                            r.action,
+                            r.triggeredBy,
+                            r.topic
+                    });
+                }
+            }
+
+            if (lblDbStats != null) {
+                lblDbStats.setText(String.format("Đã tải: %d mẫu cảm biến, %d nhật ký đèn LED | PostgreSQL: localhost:5432/postgres",
+                        sensors.size(), actuators.size()));
+            }
+        });
+    }
+
+    /**
+     * Xuất báo cáo dữ liệu lịch sử ra file Microsoft Word (.docx)
+     */
+    private void exportDocxReport() {
+        if (dbManager == null || !dbManager.isConnected()) {
+            JOptionPane.showMessageDialog(this,
+                    "Chưa kết nối cơ sở dữ liệu PostgreSQL! Hãy kiểm tra kết nối trước.",
+                    "Chưa Có Dữ Liệu", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        List<DatabaseManager.SensorRecord> records = dbManager.getRecentSensorData(200);
+        if (records.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Hiện tại chưa có bản ghi nào trong bảng sensor_data để xuất báo cáo!",
+                    "Bảng Trống", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Lưu Báo Cáo Dữ Liệu IoT (.docx)");
+        fileChooser.setSelectedFile(new File("BaoCao_GiamSat_IoT_DHT22.docx"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter("Tài liệu Microsoft Word (*.docx)", "docx"));
+
+        int userSelection = fileChooser.showSaveDialog(this);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            File fileToSave = fileChooser.getSelectedFile();
+            if (!fileToSave.getName().toLowerCase().endsWith(".docx")) {
+                fileToSave = new File(fileToSave.getAbsolutePath() + ".docx");
+            }
+
+            boolean ok = dbManager.exportToDocx(fileToSave, records);
+            if (ok) {
+                int choice = JOptionPane.showConfirmDialog(this,
+                        "Xuất báo cáo Word (.docx) thành công!\nĐường dẫn: " + fileToSave.getAbsolutePath()
+                                + "\n\nBạn có muốn mở file báo cáo ngay bây giờ không?",
+                        "Xuất Báo Cáo Thành Công", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+
+                if (choice == JOptionPane.YES_OPTION) {
+                    try {
+                        if (Desktop.isDesktopSupported()) {
+                            Desktop.getDesktop().open(fileToSave);
+                        }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(this, "Không mở được ứng dụng Word: " + ex.getMessage());
+                    }
+                }
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Xuất file thất bại! Lỗi: " + dbManager.getLastError(),
+                        "Lỗi Xuất File", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Hộp thoại cấu hình nhanh thông số kết nối PostgreSQL
+     */
+    private void showDbConfigDialog() {
+        JTextField txtHost = new JTextField("localhost", 15);
+        JTextField txtPort = new JTextField("5432", 6);
+        JTextField txtDb = new JTextField("postgres", 12);
+        JTextField txtUser = new JTextField("postgres", 12);
+        JPasswordField txtPass = new JPasswordField("M@giavy265", 15);
+
+        JPanel form = new JPanel(new GridLayout(5, 2, 8, 8));
+        form.add(new JLabel("Máy chủ (Host):"));
+        form.add(txtHost);
+        form.add(new JLabel("Cổng (Port):"));
+        form.add(txtPort);
+        form.add(new JLabel("Tên Database:"));
+        form.add(txtDb);
+        form.add(new JLabel("Tài khoản (User):"));
+        form.add(txtUser);
+        form.add(new JLabel("Mật khẩu (Password):"));
+        form.add(txtPass);
+
+        int result = JOptionPane.showConfirmDialog(this, form,
+                "Cấu Hình Kết Nối PostgreSQL", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+
+        if (result == JOptionPane.OK_OPTION) {
+            String host = txtHost.getText().trim();
+            int port = 5432;
+            try {
+                port = Integer.parseInt(txtPort.getText().trim());
+            } catch (NumberFormatException ignored) {}
+            String db = txtDb.getText().trim();
+            String user = txtUser.getText().trim();
+            String pass = new String(txtPass.getPassword());
+
+            boolean connected = dbManager.connect(host, port, db, user, pass);
+            updateDbBadge();
+            if (connected) {
+                JOptionPane.showMessageDialog(this,
+                        "Kết nối thành công tới PostgreSQL: " + host + ":" + port + "/" + db,
+                        "Kết Nối Thành Công", JOptionPane.INFORMATION_MESSAGE);
+                refreshDatabaseTables();
+            } else {
+                JOptionPane.showMessageDialog(this,
+                        "Kết nối thất bại!\nChi tiết: " + dbManager.getLastError(),
+                        "Lỗi Kết Nối", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 

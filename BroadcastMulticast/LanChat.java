@@ -46,7 +46,7 @@ public class LanChat {
     // ---- Multicast (nhóm) ----
     static final int MC_PORT = 8000;
     static final String GROUP_PREFIX = "239.1.1.";
-    static final int TTL = 1;
+    static final int TTL = 32;
     static final int HISTORY_SIZE = 500;
     static final int MAX_NACK_RETRY = 3;
 

@@ -1,0 +1,4 @@
+target/
+server/server.properties
+server.properties
+server/uploads/
