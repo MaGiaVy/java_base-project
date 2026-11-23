@@ -1,8 +1,13 @@
 package com.zalolite.server;
 
+import com.zalolite.common.Conversation;
+import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
 import com.zalolite.common.User;
+import com.zalolite.server.dao.ConversationDao;
+import com.zalolite.server.dao.FriendDao;
+import com.zalolite.server.dao.MessageDao;
 import com.zalolite.server.dao.UserDao;
 
 import java.io.BufferedReader;
@@ -12,6 +17,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Một luồng phục vụ một client: đọc từng dòng JSON, xử lý, trả lời. */
@@ -19,17 +27,26 @@ public class ClientHandler implements Runnable {
     private static final int MAX_LINE = 64 * 1024;
     private static final Pattern PHONE = Pattern.compile("0\\d{9,10}");
     private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    private static final Set<String> CLIENT_MSG_KINDS = Set.of(
+            Message.KIND_TEXT, Message.KIND_IMAGE, Message.KIND_FILE, Message.KIND_VIDEO, Message.KIND_AUDIO);
 
     private final Socket socket;
     private final SessionRegistry sessions;
     private final UserDao users;
+    private final FriendDao friends;
+    private final ConversationDao convs;
+    private final MessageDao messages;
     private BufferedWriter out;
     private User me; // null khi chưa đăng nhập
 
-    public ClientHandler(Socket socket, SessionRegistry sessions, UserDao users) {
+    public ClientHandler(Socket socket, SessionRegistry sessions, UserDao users,
+                         FriendDao friends, ConversationDao convs, MessageDao messages) {
         this.socket = socket;
         this.sessions = sessions;
         this.users = users;
+        this.friends = friends;
+        this.convs = convs;
+        this.messages = messages;
     }
 
     @Override
@@ -52,6 +69,8 @@ public class ClientHandler implements Runnable {
                 }
                 try {
                     handle(req);
+                } catch (IllegalArgumentException e) {
+                    send(Packet.error(req, e.getMessage()));
                 } catch (Exception e) {
                     System.err.println("[ERROR] " + req.type + ": " + e);
                     send(Packet.error(req, "Lỗi máy chủ"));
@@ -61,8 +80,11 @@ public class ClientHandler implements Runnable {
             // client ngắt kết nối
         } finally {
             if (me != null) {
-                sessions.remove(me.id, this);
-                System.out.println("[INFO] " + me.phone + " đã thoát");
+                long oldId = me.id;
+                String oldPhone = me.phone;
+                me = null;
+                if (sessions.remove(oldId, this)) notifyPresence(oldId, false);
+                System.out.println("[INFO] " + oldPhone + " đã thoát");
             }
         }
     }
@@ -76,9 +98,36 @@ public class ClientHandler implements Runnable {
             case PacketType.REGISTER -> register(req);
             case PacketType.LOGIN -> login(req);
             case PacketType.LOGOUT -> logout(req);
+            case PacketType.PROFILE_UPDATE -> profileUpdate(req);
+            case PacketType.P2P_REGISTER -> p2pRegister(req);
+            case PacketType.P2P_LOOKUP -> p2pLookup(req);
+            case PacketType.USER_SEARCH -> userSearch(req);
+            case PacketType.FRIEND_LIST -> friendList(req);
+            case PacketType.FRIEND_REQUEST -> friendRequest(req);
+            case PacketType.FRIEND_ACCEPT -> friendAccept(req);
+            case PacketType.FRIEND_REJECT -> friendReject(req);
+            case PacketType.FRIEND_REMOVE -> friendRemove(req);
+            case PacketType.CONV_LIST -> convList(req);
+            case PacketType.CONV_OPEN_DIRECT -> convOpenDirect(req);
+            case PacketType.CONV_PIN -> convPin(req);
+            case PacketType.GROUP_CREATE -> groupCreate(req);
+            case PacketType.GROUP_MEMBERS -> groupMembers(req);
+            case PacketType.GROUP_ADD_MEMBER -> groupAddMember(req);
+            case PacketType.GROUP_REMOVE_MEMBER -> groupRemoveMember(req);
+            case PacketType.GROUP_LEAVE -> groupLeave(req);
+            case PacketType.GROUP_RENAME -> groupRename(req);
+            case PacketType.MSG_SEND -> msgSend(req);
+            case PacketType.MSG_HISTORY -> msgHistory(req);
+            case PacketType.MSG_RECALL -> msgRecall(req);
+            case PacketType.MSG_REACT -> msgReact(req);
+            case PacketType.MSG_SEARCH -> msgSearch(req);
+            case PacketType.TYPING -> typing(req);
+            case PacketType.MSG_SEEN -> msgSeen(req);
             default -> send(Packet.error(req, "Không hỗ trợ: " + req.type));
         }
     }
+
+    // --- Tài khoản & hồ sơ ---
 
     private void register(Packet req) throws Exception {
         String phone = trim(req.str("phone"));
@@ -107,17 +156,407 @@ public class ClientHandler implements Runnable {
             send(Packet.error(req, "Sai số điện thoại hoặc mật khẩu"));
             return;
         }
-        if (me != null) sessions.remove(me.id, this);
+        if (me != null && me.id != u.id && sessions.remove(me.id, this)) {
+            notifyPresence(me.id, false);
+        }
         me = u;
-        sessions.add(u.id, this);
+        me.online = true;
+        boolean becameOnline = sessions.add(u.id, this);
         System.out.println("[INFO] " + u.phone + " đăng nhập từ " + socket.getRemoteSocketAddress());
         send(Packet.ok(req).put("user", u));
+        if (becameOnline) notifyPresence(u.id, true);
     }
 
     private void logout(Packet req) {
-        sessions.remove(me.id, this);
+        long oldId = me.id;
         me = null;
+        if (sessions.remove(oldId, this)) notifyPresence(oldId, false);
         send(Packet.ok(req));
+    }
+
+    private void profileUpdate(Packet req) throws Exception {
+        String name = trim(req.str("name"));
+        String email = trim(req.str("email"));
+        if (name == null || name.isEmpty() || name.length() > 60) {
+            send(Packet.error(req, "Tên phải từ 1 đến 60 ký tự"));
+        } else if (email != null && !email.isEmpty() && !EMAIL.matcher(email).matches()) {
+            send(Packet.error(req, "Email không hợp lệ"));
+        } else {
+            User updated = users.updateProfile(me.id, name, email == null || email.isEmpty() ? null : email);
+            if (updated == null) {
+                send(Packet.error(req, "Không tìm thấy tài khoản"));
+                return;
+            }
+            updated.online = true;
+            me = updated;
+            send(Packet.ok(req).put("user", updated));
+        }
+    }
+
+    // --- P2P ---
+
+    private void p2pRegister(Packet req) {
+        int port = (int) req.num("port");
+        if (port < 1 || port > 65535) {
+            send(Packet.error(req, "Cổng P2P không hợp lệ"));
+            return;
+        }
+        String ip = socket.getInetAddress().getHostAddress();
+        sessions.registerP2p(me.id, ip, port);
+        send(Packet.ok(req).put("ip", ip).put("port", port));
+    }
+
+    private void p2pLookup(Packet req) {
+        long userId = req.num("userId");
+        boolean online = sessions.isOnline(userId);
+        SessionRegistry.P2pEndpoint ep = sessions.getP2p(userId);
+        send(Packet.ok(req)
+                .put("online", online)
+                .put("ip", ep == null ? null : ep.ip())
+                .put("port", ep == null ? 0 : ep.port()));
+    }
+
+    // --- Bạn bè ---
+
+    private void userSearch(Packet req) throws Exception {
+        List<User> list = users.search(req.str("query"), me.id);
+        for (User u : list) u.online = sessions.isOnline(u.id);
+        send(Packet.ok(req).put("users", list));
+    }
+
+    private void friendList(Packet req) throws Exception {
+        List<User> friendList = friends.listFriends(me.id);
+        for (User u : friendList) u.online = sessions.isOnline(u.id);
+        send(Packet.ok(req)
+                .put("friends", friendList)
+                .put("incoming", friends.listIncoming(me.id))
+                .put("outgoing", friends.listOutgoing(me.id)));
+    }
+
+    private void friendRequest(Packet req) throws Exception {
+        long targetId = req.num("targetId");
+        if (targetId <= 0 || users.findById(targetId) == null) {
+            send(Packet.error(req, "Không tìm thấy người dùng"));
+            return;
+        }
+        String err = friends.request(me.id, targetId);
+        if (err != null) {
+            send(Packet.error(req, err));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendTo(targetId, new Packet(PacketType.FRIEND_EVENT).put("action", "REQUEST").put("user", me));
+    }
+
+    private void friendAccept(Packet req) throws Exception {
+        long requesterId = req.num("userId");
+        if (!friends.accept(me.id, requesterId)) {
+            send(Packet.error(req, "Không tìm thấy lời mời kết bạn"));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendTo(requesterId, new Packet(PacketType.FRIEND_EVENT).put("action", "ACCEPTED").put("user", me));
+    }
+
+    private void friendReject(Packet req) throws Exception {
+        long requesterId = req.num("userId");
+        if (!friends.reject(me.id, requesterId)) {
+            send(Packet.error(req, "Không tìm thấy lời mời kết bạn"));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendTo(requesterId, new Packet(PacketType.FRIEND_EVENT).put("action", "REJECTED").put("userId", me.id));
+    }
+
+    private void friendRemove(Packet req) throws Exception {
+        long otherId = req.num("userId");
+        if (!friends.remove(me.id, otherId)) {
+            send(Packet.error(req, "Không tìm thấy quan hệ bạn bè"));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendTo(otherId, new Packet(PacketType.FRIEND_EVENT).put("action", "REMOVED").put("userId", me.id));
+    }
+
+    // --- Hội thoại & nhóm ---
+
+    private void convList(Packet req) throws Exception {
+        send(Packet.ok(req).put("conversations", convs.listForUser(me.id, sessions)));
+    }
+
+    private void convOpenDirect(Packet req) throws Exception {
+        long peerId = req.num("peerId");
+        if (peerId <= 0 || peerId == me.id || users.findById(peerId) == null) {
+            send(Packet.error(req, "Người dùng không hợp lệ"));
+            return;
+        }
+        Conversation conv = convs.openOrCreateDirect(me.id, peerId, sessions);
+        send(Packet.ok(req).put("conversation", conv));
+    }
+
+    private void convPin(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.setPinned(convId, me.id, req.bool("pinned"))) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        send(Packet.ok(req));
+    }
+
+    private void groupCreate(Packet req) throws Exception {
+        String name = trim(req.str("name"));
+        if (name == null || name.isEmpty() || name.length() > 80) {
+            send(Packet.error(req, "Tên nhóm phải từ 1 đến 80 ký tự"));
+            return;
+        }
+        List<Long> memberIds = req.getList("memberIds", Long.class);
+        Conversation conv = convs.createGroup(me.id, name, memberIds, sessions);
+        send(Packet.ok(req).put("conversation", conv));
+        sessions.sendToOthers(convs.getMemberIds(conv.id), me.id,
+                new Packet(PacketType.CONV_UPDATE).put("conversation", conv));
+    }
+
+    private void groupMembers(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        send(Packet.ok(req).put("members", convs.getMembers(convId, sessions)));
+    }
+
+    private void groupAddMember(Packet req) throws Exception {
+        long convId = req.num("convId");
+        long userId = req.num("userId");
+        if (!convs.isOwner(convId, me.id)) {
+            send(Packet.error(req, "Chỉ trưởng nhóm mới có quyền thêm thành viên"));
+            return;
+        }
+        User target = users.findById(userId);
+        if (target == null) {
+            send(Packet.error(req, "Không tìm thấy người dùng"));
+            return;
+        }
+        if (!convs.addMember(convId, userId)) {
+            send(Packet.error(req, "Người dùng đã ở trong nhóm"));
+            return;
+        }
+        Message sys = saveSystemMsg(convId, me.name + " đã thêm " + target.name + " vào nhóm");
+        send(Packet.ok(req));
+        broadcastGroupChange(convId, sys);
+    }
+
+    private void groupRemoveMember(Packet req) throws Exception {
+        long convId = req.num("convId");
+        long userId = req.num("userId");
+        if (!convs.isOwner(convId, me.id)) {
+            send(Packet.error(req, "Chỉ trưởng nhóm mới có quyền xóa thành viên"));
+            return;
+        }
+        if (userId == me.id) {
+            send(Packet.error(req, "Trưởng nhóm không thể tự xóa mình, hãy chọn rời nhóm"));
+            return;
+        }
+        User target = users.findById(userId);
+        if (!convs.removeMember(convId, userId)) {
+            send(Packet.error(req, "Người dùng không có trong nhóm"));
+            return;
+        }
+        Message sys = saveSystemMsg(convId, me.name + " đã xóa " + (target != null ? target.name : userId) + " khỏi nhóm");
+        send(Packet.ok(req));
+        broadcastGroupChange(convId, sys);
+        sessions.sendTo(userId, new Packet(PacketType.CONV_UPDATE).put("convId", convId).put("removed", true));
+    }
+
+    private void groupLeave(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.leaveGroup(convId, me.id)) {
+            send(Packet.error(req, "Không thể rời hội thoại này"));
+            return;
+        }
+        List<Long> remaining = convs.getMemberIds(convId);
+        if (!remaining.isEmpty()) {
+            Message sys = saveSystemMsg(convId, me.name + " đã rời khỏi nhóm");
+            broadcastGroupChange(convId, sys);
+        }
+        send(Packet.ok(req));
+    }
+
+    private void groupRename(Packet req) throws Exception {
+        long convId = req.num("convId");
+        String name = trim(req.str("name"));
+        if (name == null || name.isEmpty() || name.length() > 80) {
+            send(Packet.error(req, "Tên nhóm phải từ 1 đến 80 ký tự"));
+            return;
+        }
+        if (!convs.isOwner(convId, me.id)) {
+            send(Packet.error(req, "Chỉ trưởng nhóm mới có quyền đổi tên nhóm"));
+            return;
+        }
+        convs.renameGroup(convId, name);
+        Message sys = saveSystemMsg(convId, me.name + " đã đổi tên nhóm thành " + name);
+        send(Packet.ok(req));
+        broadcastGroupChange(convId, sys);
+    }
+
+    // --- Tin nhắn & trạng thái ---
+
+    private void msgSend(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        String kind = trim(req.str("kind"));
+        if (kind == null || kind.isEmpty()) kind = Message.KIND_TEXT;
+        if (!CLIENT_MSG_KINDS.contains(kind)) {
+            send(Packet.error(req, "Loại tin nhắn không hợp lệ"));
+            return;
+        }
+        String content = req.str("content");
+        if (Message.KIND_TEXT.equals(kind) && (content == null || content.isBlank())) {
+            send(Packet.error(req, "Nội dung tin nhắn không được trống"));
+            return;
+        }
+
+        Message m = new Message();
+        m.convId = convId;
+        m.senderId = me.id;
+        m.senderName = me.name;
+        m.kind = kind;
+        m.content = content;
+        m.filePath = req.str("filePath");
+        m.fileName = req.str("fileName");
+        m.fileSize = req.num("fileSize");
+        m.durationSec = (int) req.num("durationSec");
+        long replyTo = req.num("replyTo");
+        m.replyTo = replyTo > 0 ? replyTo : null;
+        String transport = trim(req.str("transport"));
+        m.transport = (transport == null || transport.isEmpty()) ? "SERVER" : transport;
+
+        messages.save(m);
+        List<Long> memberIds = convs.getMemberIds(convId);
+        boolean anyOtherOnline = memberIds.stream().anyMatch(id -> id != me.id && sessions.isOnline(id));
+        m.deliveryState = anyOtherOnline ? Message.STATE_DELIVERED : Message.STATE_SENT;
+        convs.updateLastRead(convId, me.id, m.id);
+
+        send(Packet.ok(req).put("message", m));
+        sessions.sendToOthers(memberIds, me.id, new Packet(PacketType.MSG_NEW).put("message", m));
+    }
+
+    private void msgHistory(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        long beforeId = req.num("beforeId");
+        int limit = (int) req.num("limit");
+        if (limit <= 0) limit = 30;
+        if (limit > 100) limit = 100;
+
+        List<Message> list = messages.history(convId, me.id, beforeId, limit + 1);
+        boolean hasMore = list.size() > limit;
+        if (hasMore) list = list.subList(1, list.size());
+        send(Packet.ok(req).put("messages", list).put("hasMore", hasMore));
+    }
+
+    private void msgRecall(Packet req) throws Exception {
+        long msgId = req.num("msgId");
+        long convId = messages.recall(msgId, me.id);
+        if (convId == 0) {
+            send(Packet.error(req, "Không thể thu hồi tin nhắn này"));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendToAll(convs.getMemberIds(convId),
+                new Packet(PacketType.MSG_RECALLED).put("convId", convId).put("msgId", msgId));
+    }
+
+    private void msgReact(Packet req) throws Exception {
+        long msgId = req.num("msgId");
+        String emoji = req.str("emoji");
+        long convId = messages.react(msgId, me.id, emoji);
+        if (convId == 0) {
+            send(Packet.error(req, "Không tìm thấy tin nhắn"));
+            return;
+        }
+        send(Packet.ok(req));
+        sessions.sendToAll(convs.getMemberIds(convId),
+                new Packet(PacketType.MSG_REACTED)
+                        .put("convId", convId).put("msgId", msgId).put("userId", me.id).put("emoji", emoji));
+    }
+
+    private void msgSearch(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        send(Packet.ok(req).put("messages", messages.search(convId, me.id, req.str("query"))));
+    }
+
+    private void typing(Packet req) throws Exception {
+        long convId = req.num("convId");
+        if (!convs.isMember(convId, me.id)) {
+            if (req.reqId != null) send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        sessions.sendToOthers(convs.getMemberIds(convId), me.id,
+                new Packet(PacketType.TYPING)
+                        .put("convId", convId).put("userId", me.id)
+                        .put("userName", me.name).put("typing", req.bool("typing")));
+        if (req.reqId != null) send(Packet.ok(req));
+    }
+
+    private void msgSeen(Packet req) throws Exception {
+        long convId = req.num("convId");
+        long lastReadMsgId = req.num("lastReadMsgId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        convs.updateLastRead(convId, me.id, lastReadMsgId);
+        send(Packet.ok(req));
+        sessions.sendToOthers(convs.getMemberIds(convId), me.id,
+                new Packet(PacketType.SEEN_UPDATE)
+                        .put("convId", convId).put("userId", me.id).put("lastReadMsgId", lastReadMsgId));
+    }
+
+    // --- Helpers ---
+
+    private Message saveSystemMsg(long convId, String text) throws SQLException {
+        Message sys = new Message();
+        sys.convId = convId;
+        sys.senderId = me.id;
+        sys.senderName = me.name;
+        sys.kind = Message.KIND_SYSTEM;
+        sys.content = text;
+        return messages.save(sys);
+    }
+
+    private void broadcastGroupChange(long convId, Message sys) throws SQLException {
+        List<Long> memberIds = convs.getMemberIds(convId);
+        sessions.sendToAll(memberIds, new Packet(PacketType.MSG_NEW).put("message", sys));
+        for (Long uid : memberIds) {
+            if (sessions.isOnline(uid)) {
+                Conversation updated = convs.findForUser(convId, uid, sessions);
+                if (updated != null) {
+                    sessions.sendTo(uid, new Packet(PacketType.CONV_UPDATE).put("conversation", updated));
+                }
+            }
+        }
+    }
+
+    private void notifyPresence(long userId, boolean online) {
+        try {
+            List<Long> friendIds = friends.listFriendIds(userId);
+            if (!friendIds.isEmpty()) {
+                sessions.sendToAll(friendIds, new Packet(PacketType.PRESENCE).put("userId", userId).put("online", online));
+            }
+        } catch (SQLException e) {
+            System.err.println("[ERROR] PRESENCE: " + e);
+        }
     }
 
     private static String trim(String s) {

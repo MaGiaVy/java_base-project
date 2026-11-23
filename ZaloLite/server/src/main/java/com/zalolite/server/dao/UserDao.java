@@ -8,6 +8,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UserDao {
     private final Db db;
@@ -48,6 +50,45 @@ public class UserDao {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement("SELECT id, phone, name, email, avatar FROM users WHERE phone = ?")) {
             ps.setString(1, phone);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    public User findById(long id) throws SQLException {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement("SELECT id, phone, name, email, avatar FROM users WHERE id = ?")) {
+            ps.setLong(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    public List<User> search(String query, long excludeUserId) throws SQLException {
+        if (query == null || query.isBlank()) return List.of();
+        String sql = "SELECT id, phone, name, email, avatar FROM users "
+                + "WHERE id <> ? AND (phone ILIKE ? OR name ILIKE ?) ORDER BY name LIMIT 20";
+        String like = "%" + query.trim() + "%";
+        List<User> list = new ArrayList<>();
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, excludeUserId);
+            ps.setString(2, like);
+            ps.setString(3, like);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(map(rs));
+            }
+        }
+        return list;
+    }
+
+    public User updateProfile(long id, String name, String email) throws SQLException {
+        String sql = "UPDATE users SET name = ?, email = ? WHERE id = ? RETURNING id, phone, name, email, avatar";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setString(2, email);
+            ps.setLong(3, id);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? map(rs) : null;
             }

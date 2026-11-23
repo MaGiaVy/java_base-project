@@ -7,35 +7,44 @@ import com.zalolite.common.PacketType;
 import javax.swing.*;
 import java.awt.*;
 
+/** Hộp thoại đăng ký tài khoản mới theo phong cách Berry Pop. */
 public class RegisterDialog extends JDialog {
     public RegisterDialog(Frame owner, String server) {
-        super(owner, "Tạo tài khoản", true);
+        super(owner, "ZaloLite Berry - Tạo tài khoản", true);
         JTextField phone = new JTextField();
         JTextField name = new JTextField();
         JTextField email = new JTextField();
         JPasswordField pass = new JPasswordField();
         JPasswordField pass2 = new JPasswordField();
         JLabel status = new JLabel(" ");
-        status.setForeground(Color.RED);
-        JButton ok = new JButton("Đăng ký");
+        status.setFont(Theme.uiFont(12f));
+        status.setForeground(Theme.PRIMARY_RED_DARK);
+        JButton ok = Theme.primaryButton("Đăng ký");
 
-        JPanel form = new JPanel(new GridLayout(0, 1, 4, 4));
-        form.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
-        form.add(new JLabel("Số điện thoại"));
+        JPanel form = new JPanel(new GridLayout(0, 1, 6, 6));
+        form.setBackground(Theme.SIDEBAR_BG);
+        form.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
+
+        JLabel title = new JLabel("🍓 Tạo tài khoản ZaloLite Berry");
+        title.setFont(Theme.emojiFont(Font.BOLD, 16f));
+        title.setForeground(Theme.PRIMARY_RED);
+        form.add(title);
+
+        form.add(fieldLabel("Số điện thoại"));
         form.add(phone);
-        form.add(new JLabel("Tên hiển thị"));
+        form.add(fieldLabel("Tên hiển thị"));
         form.add(name);
-        form.add(new JLabel("Email (để lấy lại mật khẩu)"));
+        form.add(fieldLabel("Email (để lấy lại mật khẩu)"));
         form.add(email);
-        form.add(new JLabel("Mật khẩu (ít nhất 6 ký tự)"));
+        form.add(fieldLabel("Mật khẩu (ít nhất 6 ký tự)"));
         form.add(pass);
-        form.add(new JLabel("Nhập lại mật khẩu"));
+        form.add(fieldLabel("Nhập lại mật khẩu"));
         form.add(pass2);
         form.add(status);
         form.add(ok);
         setContentPane(form);
         pack();
-        setSize(360, getHeight());
+        setSize(380, getHeight() + 12);
         setLocationRelativeTo(owner);
 
         ok.addActionListener(e -> {
@@ -45,36 +54,38 @@ public class RegisterDialog extends JDialog {
                 return;
             }
             ok.setEnabled(false);
-            new SwingWorker<Packet, Void>() {
-                @Override
-                protected Packet doInBackground() throws Exception {
-                    Object[] hp = LoginFrame.parseServer(server);
-                    Connection conn = new Connection((String) hp[0], (int) hp[1]);
-                    try {
-                        return conn.request(new Packet(PacketType.REGISTER)
-                                .put("phone", phone.getText().trim()).put("name", name.getText().trim())
-                                .put("email", email.getText().trim()).put("password", p1));
-                    } finally {
-                        conn.close();
-                    }
+            status.setText(" ");
+            Theme.runAsync(() -> {
+                Object[] hp = LoginFrame.parseServer(server);
+                Connection conn = new Connection((String) hp[0], (int) hp[1]);
+                try {
+                    return conn.request(new Packet(PacketType.REGISTER)
+                            .put("phone", phone.getText().trim())
+                            .put("name", name.getText().trim())
+                            .put("email", email.getText().trim())
+                            .put("password", p1));
+                } finally {
+                    conn.close();
                 }
-
-                @Override
-                protected void done() {
-                    ok.setEnabled(true);
-                    try {
-                        Packet res = get();
-                        if (res.isOk()) {
-                            JOptionPane.showMessageDialog(RegisterDialog.this, "Đăng ký thành công, hãy đăng nhập.");
-                            dispose();
-                        } else {
-                            status.setText(res.str("error"));
-                        }
-                    } catch (Exception ex) {
-                        status.setText("Không kết nối được máy chủ");
-                    }
+            }, res -> {
+                ok.setEnabled(true);
+                if (res.isOk()) {
+                    JOptionPane.showMessageDialog(RegisterDialog.this, "Đăng ký thành công, hãy đăng nhập.");
+                    dispose();
+                } else {
+                    status.setText(res.str("error"));
                 }
-            }.execute();
+            }, err -> {
+                ok.setEnabled(true);
+                status.setText(err);
+            });
         });
+    }
+
+    private static JLabel fieldLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(Theme.uiFont(Font.BOLD, 12f));
+        l.setForeground(Theme.TEXT_DARK);
+        return l;
     }
 }

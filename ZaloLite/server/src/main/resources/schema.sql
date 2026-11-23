@@ -32,20 +32,28 @@ CREATE TABLE IF NOT EXISTS members (
     role             VARCHAR(10) NOT NULL DEFAULT 'MEMBER', -- OWNER | MEMBER
     last_read_msg_id BIGINT NOT NULL DEFAULT 0,
     pinned           BOOLEAN NOT NULL DEFAULT false,
+    joined_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (conv_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-    id         BIGSERIAL PRIMARY KEY,
-    conv_id    BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    sender_id  BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    kind       VARCHAR(10) NOT NULL, -- TEXT | IMAGE | FILE | SYSTEM
-    content    TEXT,
-    file_path  TEXT,
-    reply_to   BIGINT REFERENCES messages(id) ON DELETE SET NULL,
-    recalled   BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    id           BIGSERIAL PRIMARY KEY,
+    conv_id      BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    kind         VARCHAR(10) NOT NULL, -- TEXT | IMAGE | FILE | VIDEO | AUDIO | SYSTEM
+    content      TEXT,
+    file_path    TEXT,
+    file_name    TEXT,
+    file_size    BIGINT NOT NULL DEFAULT 0,
+    duration_sec INT NOT NULL DEFAULT 0,
+    reply_to     BIGINT REFERENCES messages(id) ON DELETE SET NULL,
+    recalled     BOOLEAN NOT NULL DEFAULT false,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE members  ADD COLUMN IF NOT EXISTS joined_at    TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name    TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_size    BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration_sec INT NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conv_id, id);
 
 CREATE TABLE IF NOT EXISTS reactions (

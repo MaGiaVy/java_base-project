@@ -1,7 +1,6 @@
 package com.zalolite.client.ui;
 
 import com.zalolite.client.Connection;
-import com.zalolite.client.ZaloApp;
 import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
 import com.zalolite.common.User;
@@ -9,52 +8,63 @@ import com.zalolite.common.User;
 import javax.swing.*;
 import java.awt.*;
 
-/** Màn hình đăng nhập kiểu Zalo PC. */
+/** Màn hình đăng nhập phong cách Berry Pop. */
 public class LoginFrame extends JFrame {
     private final JTextField serverField = new JTextField("localhost:9000");
     private final JTextField phoneField = new JTextField();
     private final JPasswordField passField = new JPasswordField();
-    private final JButton loginBtn = new JButton("Đăng nhập");
+    private final JButton loginBtn = Theme.primaryButton("Đăng nhập");
     private final JLabel status = new JLabel(" ");
 
     public LoginFrame() {
-        super("ZaloLite - Đăng nhập");
+        super("ZaloLite Berry - Đăng nhập");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(400, 520);
+        setSize(420, 540);
         setLocationRelativeTo(null);
         setResizable(false);
 
         JPanel root = new JPanel(new GridBagLayout());
-        root.setBackground(new Color(0xE8F3FF));
-        JPanel card = new JPanel();
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBackground(Color.WHITE);
-        card.setBorder(BorderFactory.createEmptyBorder(24, 28, 24, 28));
+        root.setBackground(Theme.SIDEBAR_BG);
 
-        JLabel logo = new JLabel("Zalo");
-        logo.setFont(logo.getFont().deriveFont(Font.BOLD, 40f));
-        logo.setForeground(ZaloApp.ZALO_BLUE);
+        Theme.RoundedPanel card = new Theme.RoundedPanel(22, Color.WHITE, null, Theme.BORDER_PINK);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(BorderFactory.createEmptyBorder(28, 30, 26, 30));
+
+        JLabel badge = new JLabel("🍓", SwingConstants.CENTER);
+        badge.setFont(Theme.emojiFont(36f));
+        badge.setAlignmentX(CENTER_ALIGNMENT);
+
+        JLabel logo = new JLabel("ZaloLite Berry");
+        logo.setFont(Theme.uiFont(Font.BOLD, 28f));
+        logo.setForeground(Theme.PRIMARY_RED);
         logo.setAlignmentX(CENTER_ALIGNMENT);
-        JLabel sub = new JLabel("Đăng nhập tài khoản ZaloLite");
+
+        JLabel sub = new JLabel("Đăng nhập tài khoản của bạn");
+        sub.setFont(Theme.uiFont(13f));
+        sub.setForeground(Theme.TEXT_MUTED);
         sub.setAlignmentX(CENTER_ALIGNMENT);
 
         phoneField.putClientProperty("JTextField.placeholderText", "Số điện thoại");
         passField.putClientProperty("JTextField.placeholderText", "Mật khẩu");
         serverField.putClientProperty("JTextField.placeholderText", "Máy chủ (host:port)");
 
-        loginBtn.setBackground(ZaloApp.ZALO_BLUE);
-        loginBtn.setForeground(Color.WHITE);
         JButton registerBtn = new JButton("Tạo tài khoản mới");
+        registerBtn.setFont(Theme.uiFont(Font.BOLD, 13f));
         registerBtn.setBorderPainted(false);
         registerBtn.setContentAreaFilled(false);
-        registerBtn.setForeground(ZaloApp.ZALO_BLUE);
-        status.setForeground(Color.RED);
+        registerBtn.setForeground(Theme.PRIMARY_PURPLE);
+        registerBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        status.setFont(Theme.uiFont(12f));
+        status.setForeground(Theme.PRIMARY_RED_DARK);
 
+        card.add(badge);
+        card.add(Box.createVerticalStrut(4));
         card.add(logo);
+        card.add(Box.createVerticalStrut(4));
         card.add(sub);
-        card.add(Box.createVerticalStrut(20));
+        card.add(Box.createVerticalStrut(22));
         for (JComponent c : new JComponent[]{phoneField, passField, serverField, loginBtn}) {
-            c.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+            c.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
             c.setAlignmentX(CENTER_ALIGNMENT);
             card.add(c);
             card.add(Box.createVerticalStrut(10));
@@ -62,8 +72,10 @@ public class LoginFrame extends JFrame {
         status.setAlignmentX(CENTER_ALIGNMENT);
         registerBtn.setAlignmentX(CENTER_ALIGNMENT);
         card.add(status);
+        card.add(Box.createVerticalStrut(4));
         card.add(registerBtn);
-        card.setPreferredSize(new Dimension(320, 400));
+        card.setPreferredSize(new Dimension(340, 440));
+
         root.add(card);
         setContentPane(root);
 
@@ -90,31 +102,22 @@ public class LoginFrame extends JFrame {
         loginBtn.setEnabled(false);
         status.setText(" ");
         String server = serverField.getText();
-        new SwingWorker<Object[], Void>() {
-            @Override
-            protected Object[] doInBackground() throws Exception {
-                Object[] hp = parseServer(server);
-                Connection conn = new Connection((String) hp[0], (int) hp[1]);
-                Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
-                if (!res.isOk()) {
-                    conn.close();
-                    throw new Exception(res.str("error"));
-                }
-                return new Object[]{conn, res.get("user", User.class)};
+        Theme.runAsync(() -> {
+            Object[] hp = parseServer(server);
+            Connection conn = new Connection((String) hp[0], (int) hp[1]);
+            Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
+            if (!res.isOk()) {
+                conn.close();
+                throw new Exception(res.str("error"));
             }
-
-            @Override
-            protected void done() {
-                loginBtn.setEnabled(true);
-                try {
-                    Object[] r = get();
-                    new MainFrame((Connection) r[0], (User) r[1]).setVisible(true);
-                    dispose();
-                } catch (Exception ex) {
-                    Throwable c = ex.getCause() != null ? ex.getCause() : ex;
-                    status.setText(c.getMessage() == null ? "Không kết nối được máy chủ" : c.getMessage());
-                }
-            }
-        }.execute();
+            return new Object[]{conn, res.get("user", User.class)};
+        }, r -> {
+            loginBtn.setEnabled(true);
+            new MainFrame((Connection) r[0], (User) r[1]).setVisible(true);
+            dispose();
+        }, err -> {
+            loginBtn.setEnabled(true);
+            status.setText(err);
+        });
     }
 }

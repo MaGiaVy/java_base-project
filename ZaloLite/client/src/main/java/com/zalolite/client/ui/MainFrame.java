@@ -1,76 +1,144 @@
 package com.zalolite.client.ui;
 
 import com.zalolite.client.Connection;
-import com.zalolite.client.ZaloApp;
+import com.zalolite.common.Conversation;
+import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
 import com.zalolite.common.User;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
- * Cửa sổ chính kiểu Zalo PC: thanh dọc xanh bên trái | danh sách hội thoại | khung chat.
- * Ngày 1: mới có khung; danh sách hội thoại và chat sẽ thêm từ Ngày 2-3.
+ * Cửa sổ chính ZaloLite Berry:
+ * Thanh rail tím mận (58px) | Cột giữa hội thoại / bạn bè (290px) | Khung chat Berry Pop.
  */
 public class MainFrame extends JFrame {
+    private static final String TAB_CHATS = "CHATS";
+    private static final String TAB_FRIENDS = "FRIENDS";
+
     private final Connection conn;
     private final User me;
 
+    // Left rail
+    private final RailButton chatNavBtn;
+    private final RailButton friendNavBtn;
+    private String activeTab = TAB_CHATS;
+
+    // Middle panel
+    private final CardLayout midCards = new CardLayout();
+    private final JPanel midPanel = new JPanel(midCards);
+    private final JTextField convFilterField = new JTextField();
+    private final JPanel convListBox = new JPanel();
+    private final FriendPanel friendPanel;
+    private final List<Conversation> conversations = new ArrayList<>();
+
+    // Right panel
+    private final JPanel rightPanel = new JPanel(new BorderLayout());
+    private final JPanel rightContent = new JPanel(new BorderLayout());
+    private final JLabel toastLabel = new JLabel(" ", SwingConstants.CENTER);
+    private final Timer toastTimer;
+    private ChatPanel activeChat;
+
     public MainFrame(Connection conn, User me) {
-        super("ZaloLite - " + me.name);
+        super("ZaloLite Berry - " + me.name);
         this.conn = conn;
         this.me = me;
+
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setSize(1000, 650);
+        setSize(1120, 700);
+        setMinimumSize(new Dimension(880, 560));
         setLocationRelativeTo(null);
 
-        JPanel nav = new JPanel();
-        nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
-        nav.setBackground(ZaloApp.ZALO_BLUE);
-        nav.setPreferredSize(new Dimension(64, 0));
-        JLabel avatar = new JLabel(initials(me.name), SwingConstants.CENTER);
-        avatar.setOpaque(true);
-        avatar.setBackground(Color.WHITE);
-        avatar.setForeground(ZaloApp.ZALO_BLUE);
-        avatar.setFont(avatar.getFont().deriveFont(Font.BOLD, 16f));
-        avatar.setMaximumSize(new Dimension(44, 44));
-        avatar.setAlignmentX(CENTER_ALIGNMENT);
-        avatar.setToolTipText(me.name + " - " + me.phone);
-        JButton logout = new JButton("⏻");
-        logout.setToolTipText("Đăng xuất");
-        logout.setAlignmentX(CENTER_ALIGNMENT);
-        nav.add(Box.createVerticalStrut(16));
-        nav.add(avatar);
-        nav.add(Box.createVerticalGlue());
-        nav.add(logout);
-        nav.add(Box.createVerticalStrut(16));
+        // --- 1. Left Rail (58px, #5B21B6) ---
+        JPanel rail = new JPanel();
+        rail.setLayout(new BoxLayout(rail, BoxLayout.Y_AXIS));
+        rail.setBackground(Theme.RAIL_BG);
+        rail.setPreferredSize(new Dimension(58, 0));
+        rail.setBorder(BorderFactory.createEmptyBorder(14, 6, 14, 6));
 
-        JPanel convList = new JPanel(new BorderLayout());
-        convList.setPreferredSize(new Dimension(300, 0));
-        convList.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, new Color(0xDDDDDD)));
-        convList.add(new JLabel("  Danh sách hội thoại (Ngày 2-3)"), BorderLayout.NORTH);
+        Theme.AvatarBadge myAvatar = new Theme.AvatarBadge(
+                me.name, 40, Theme.PRIMARY_RED, true, true);
+        myAvatar.setAlignmentX(CENTER_ALIGNMENT);
+        myAvatar.setToolTipText(me.name + " (" + me.phone + ")");
 
-        JLabel welcome = new JLabel("<html><center><h2>Chào mừng đến với ZaloLite!</h2>Xin chào <b>"
-                + escape(me.name) + "</b></center></html>", SwingConstants.CENTER);
+        chatNavBtn = new RailButton("💬", "Tin nhắn");
+        friendNavBtn = new RailButton("👥", "Bạn bè");
+        RailButton newGroupBtn = new RailButton("✨", "Tạo nhóm mới");
+        RailButton logoutBtn = new RailButton("⏻", "Đăng xuất");
 
-        add(nav, BorderLayout.WEST);
-        JPanel center = new JPanel(new BorderLayout());
-        center.add(convList, BorderLayout.WEST);
-        center.add(welcome, BorderLayout.CENTER);
-        add(center, BorderLayout.CENTER);
+        chatNavBtn.setSelected(true);
+        chatNavBtn.addActionListener(e -> switchTab(TAB_CHATS));
+        friendNavBtn.addActionListener(e -> switchTab(TAB_FRIENDS));
+        newGroupBtn.addActionListener(e -> openGroupCreate());
+        logoutBtn.addActionListener(e -> doLogout());
 
-        logout.addActionListener(e -> {
-            try {
-                conn.request(new Packet(PacketType.LOGOUT));
-            } catch (Exception ignored) {
-            }
-            conn.close();
-            dispose();
-            new LoginFrame().setVisible(true);
-        });
+        Theme.PillLabel tlsPill = new Theme.PillLabel("TLS", Theme.ONLINE_GREEN, Color.WHITE, 9.5f, false);
+        tlsPill.setToolTipText("Kết nối được mã hoá TLS");
+        tlsPill.setAlignmentX(CENTER_ALIGNMENT);
+        tlsPill.setMaximumSize(new Dimension(44, 20));
+
+        rail.add(myAvatar);
+        rail.add(Box.createVerticalStrut(18));
+        rail.add(chatNavBtn);
+        rail.add(Box.createVerticalStrut(8));
+        rail.add(friendNavBtn);
+        rail.add(Box.createVerticalStrut(8));
+        rail.add(newGroupBtn);
+        rail.add(Box.createVerticalGlue());
+        rail.add(tlsPill);
+        rail.add(Box.createVerticalStrut(10));
+        rail.add(logoutBtn);
+
+        // --- 2. Middle Panel (290px, #FFF5F8) ---
+        midPanel.setPreferredSize(new Dimension(290, 0));
+        midPanel.setBackground(Theme.SIDEBAR_BG);
+        midPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER_PINK));
+
+        JPanel convTab = buildConversationsTab();
+        friendPanel = new FriendPanel(conn, me, this::openConversation, friendNavBtn::setBadgeCount);
+        midPanel.add(convTab, TAB_CHATS);
+        midPanel.add(friendPanel, TAB_FRIENDS);
+
+        // --- 3. Right Panel (#FFF9FB) ---
+        rightPanel.setBackground(Theme.CHAT_BG);
+        toastLabel.setOpaque(true);
+        toastLabel.setBackground(Theme.ITEM_SELECTED);
+        toastLabel.setForeground(Theme.TEXT_DARK);
+        toastLabel.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
+        toastLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_PINK),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)
+        ));
+        toastLabel.setVisible(false);
+        toastTimer = new Timer(4000, e -> toastLabel.setVisible(false));
+        toastTimer.setRepeats(false);
+
+        rightContent.setBackground(Theme.CHAT_BG);
+        showWelcomeScreen();
+
+        rightPanel.add(toastLabel, BorderLayout.NORTH);
+        rightPanel.add(rightContent, BorderLayout.CENTER);
+
+        setLayout(new BorderLayout());
+        add(rail, BorderLayout.WEST);
+        JPanel body = new JPanel(new BorderLayout());
+        body.add(midPanel, BorderLayout.WEST);
+        body.add(rightPanel, BorderLayout.CENTER);
+        add(body, BorderLayout.CENTER);
+
+        // Listeners mạng & vòng đời cửa sổ
+        conn.addListener(this::onPush);
         conn.setOnDisconnect(() -> {
             JOptionPane.showMessageDialog(this, "Mất kết nối tới máy chủ.");
             dispose();
@@ -82,15 +150,547 @@ public class MainFrame extends JFrame {
                 conn.close();
             }
         });
+
+        loadConversations();
+        friendPanel.refresh();
     }
 
-    static String initials(String name) {
-        String[] parts = name.trim().split("\\s+");
-        String last = parts[parts.length - 1];
-        return last.isEmpty() ? "?" : last.substring(0, 1).toUpperCase();
+    private JPanel buildConversationsTab() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(Theme.SIDEBAR_BG);
+
+        JPanel header = new JPanel(new BorderLayout(0, 8));
+        header.setBackground(Theme.SIDEBAR_BG);
+        header.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_PINK),
+                BorderFactory.createEmptyBorder(12, 12, 10, 12)
+        ));
+
+        JLabel title = new JLabel("Tin nhắn");
+        title.setFont(Theme.uiFont(Font.BOLD, 17f));
+        title.setForeground(Theme.TEXT_DARK);
+        header.add(title, BorderLayout.NORTH);
+
+        convFilterField.putClientProperty("JTextField.placeholderText", "Tìm cuộc trò chuyện...");
+        convFilterField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) { renderConversations(); }
+            @Override
+            public void removeUpdate(DocumentEvent e) { renderConversations(); }
+            @Override
+            public void changedUpdate(DocumentEvent e) { renderConversations(); }
+        });
+        header.add(convFilterField, BorderLayout.SOUTH);
+
+        convListBox.setLayout(new BoxLayout(convListBox, BoxLayout.Y_AXIS));
+        convListBox.setBackground(Theme.SIDEBAR_BG);
+        convListBox.setBorder(BorderFactory.createEmptyBorder(6, 6, 8, 6));
+
+        JScrollPane scroll = new JScrollPane(convListBox);
+        scroll.setBorder(null);
+        scroll.getViewport().setBackground(Theme.SIDEBAR_BG);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(scroll, BorderLayout.CENTER);
+        return panel;
     }
 
-    static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    private void switchTab(String tab) {
+        activeTab = tab;
+        chatNavBtn.setSelected(TAB_CHATS.equals(tab));
+        friendNavBtn.setSelected(TAB_FRIENDS.equals(tab));
+        midCards.show(midPanel, tab);
+        if (TAB_FRIENDS.equals(tab)) {
+            friendPanel.refresh();
+        } else {
+            loadConversations();
+        }
+    }
+
+    private void showWelcomeScreen() {
+        activeChat = null;
+        rightContent.removeAll();
+        JPanel wrap = new JPanel(new GridBagLayout());
+        wrap.setBackground(Theme.CHAT_BG);
+
+        Theme.RoundedPanel card = new Theme.RoundedPanel(22, Color.WHITE, null, Theme.BORDER_PINK);
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+        card.setBorder(BorderFactory.createEmptyBorder(30, 38, 30, 38));
+
+        JLabel icon = new JLabel("🍓", SwingConstants.CENTER);
+        icon.setFont(Theme.emojiFont(48f));
+        icon.setAlignmentX(CENTER_ALIGNMENT);
+
+        JLabel title = new JLabel("Chào mừng đến với ZaloLite Berry!");
+        title.setFont(Theme.uiFont(Font.BOLD, 20f));
+        title.setForeground(Theme.PRIMARY_RED);
+        title.setAlignmentX(CENTER_ALIGNMENT);
+
+        JLabel sub = new JLabel("Xin chào " + me.name + " — chọn một hội thoại hoặc tìm bạn bè để bắt đầu.");
+        sub.setFont(Theme.uiFont(13f));
+        sub.setForeground(Theme.TEXT_MUTED);
+        sub.setAlignmentX(CENTER_ALIGNMENT);
+
+        card.add(icon);
+        card.add(Box.createVerticalStrut(8));
+        card.add(title);
+        card.add(Box.createVerticalStrut(6));
+        card.add(sub);
+        wrap.add(card);
+
+        rightContent.add(wrap, BorderLayout.CENTER);
+        rightContent.revalidate();
+        rightContent.repaint();
+    }
+
+    private void showToast(String message) {
+        toastLabel.setText(message);
+        toastLabel.setVisible(true);
+        toastTimer.restart();
+    }
+
+    private void loadConversations() {
+        Theme.runAsync(
+                () -> conn.request(new Packet(PacketType.CONV_LIST)),
+                res -> {
+                    if (!res.isOk()) return;
+                    conversations.clear();
+                    conversations.addAll(res.getList("conversations", Conversation.class));
+                    if (activeChat != null) {
+                        for (Conversation c : conversations) {
+                            if (c.id == activeChat.getConvId()) {
+                                c.unreadCount = 0;
+                                activeChat.updateConversation(c);
+                            }
+                        }
+                    }
+                    renderConversations();
+                },
+                null
+        );
+    }
+
+    private void renderConversations() {
+        conversations.sort(Comparator
+                .comparing((Conversation c) -> !c.pinned)
+                .thenComparing((Conversation c) -> -c.lastTime));
+
+        String q = convFilterField.getText().trim().toLowerCase();
+        convListBox.removeAll();
+        int shown = 0;
+
+        for (Conversation c : conversations) {
+            if (!q.isEmpty()) {
+                String n = c.name == null ? "" : c.name.toLowerCase();
+                String lm = c.lastMessage == null ? "" : c.lastMessage.toLowerCase();
+                if (!n.contains(q) && !lm.contains(q)) continue;
+            }
+            convListBox.add(buildConversationRow(c));
+            convListBox.add(Box.createVerticalStrut(4));
+            shown++;
+        }
+
+        if (shown == 0) {
+            JLabel empty = new JLabel(q.isEmpty()
+                    ? "Chưa có hội thoại nào."
+                    : "Không tìm thấy hội thoại phù hợp.");
+            empty.setFont(Theme.uiFont(12.5f));
+            empty.setForeground(Theme.TEXT_MUTED);
+            empty.setBorder(BorderFactory.createEmptyBorder(16, 10, 10, 10));
+            convListBox.add(empty);
+        }
+
+        convListBox.revalidate();
+        convListBox.repaint();
+    }
+
+    private JPanel buildConversationRow(Conversation c) {
+        boolean selected = activeChat != null && activeChat.getConvId() == c.id;
+        Color baseBg = selected ? Theme.ITEM_SELECTED : Theme.SIDEBAR_BG;
+
+        Theme.RoundedPanel row = new Theme.RoundedPanel(12, baseBg);
+        row.setLayout(new BorderLayout(10, 0));
+        row.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
+        row.setAlignmentX(LEFT_ALIGNMENT);
+        row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        Theme.AvatarBadge av = new Theme.AvatarBadge(
+                c.name, 42, Theme.avatarColor(c.isGroup ? c.id : c.peerId, c.isGroup),
+                !c.isGroup, c.peerOnline);
+        row.add(av, BorderLayout.WEST);
+
+        JPanel center = new JPanel(new GridLayout(2, 1, 0, 2));
+        center.setOpaque(false);
+
+        JPanel topLine = new JPanel(new BorderLayout(4, 0));
+        topLine.setOpaque(false);
+        String nameText = (c.pinned ? "📌 " : "") + (c.name == null ? "" : c.name);
+        JLabel nameLbl = new JLabel(nameText);
+        nameLbl.setFont(Theme.emojiFont(Font.BOLD, 13f));
+        nameLbl.setForeground(Theme.TEXT_DARK);
+        JLabel timeLbl = new JLabel(Theme.formatShortTime(c.lastTime));
+        timeLbl.setFont(Theme.uiFont(10.5f));
+        timeLbl.setForeground(Theme.TEXT_MUTED);
+        topLine.add(nameLbl, BorderLayout.CENTER);
+        topLine.add(timeLbl, BorderLayout.EAST);
+
+        JPanel bottomLine = new JPanel(new BorderLayout(6, 0));
+        bottomLine.setOpaque(false);
+        String preview = (c.lastMessage == null || c.lastMessage.isBlank()) ? "Bắt đầu trò chuyện" : c.lastMessage;
+        JLabel previewLbl = new JLabel(preview);
+        previewLbl.setFont(Theme.emojiFont(c.unreadCount > 0 ? Font.BOLD : Font.PLAIN, 12f));
+        previewLbl.setForeground(c.unreadCount > 0 ? Theme.TEXT_DARK : Theme.TEXT_MUTED);
+        bottomLine.add(previewLbl, BorderLayout.CENTER);
+
+        if (c.unreadCount > 0) {
+            String badgeTxt = c.unreadCount > 99 ? "99+" : String.valueOf(c.unreadCount);
+            Theme.PillLabel badge = new Theme.PillLabel(badgeTxt, Theme.PRIMARY_RED, Color.WHITE, 10.5f, false);
+            badge.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+            bottomLine.add(badge, BorderLayout.EAST);
+        }
+
+        center.add(topLine);
+        center.add(bottomLine);
+        row.add(center, BorderLayout.CENTER);
+
+        row.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                if (!selected) row.setFill(Theme.ITEM_HOVER);
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                if (!selected) row.setFill(Theme.SIDEBAR_BG);
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    openConversation(c);
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (e.isPopupTrigger()) showConvMenu(e, c);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (e.isPopupTrigger()) showConvMenu(e, c);
+            }
+        });
+        return row;
+    }
+
+    private void showConvMenu(MouseEvent e, Conversation c) {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem pin = new JMenuItem(c.pinned ? "Bỏ ghim hội thoại" : "📌 Ghim hội thoại");
+        pin.setFont(Theme.emojiFont(12.5f));
+        pin.addActionListener(ev -> togglePin(c));
+        menu.add(pin);
+        menu.show(e.getComponent(), e.getX(), e.getY());
+    }
+
+    private void togglePin(Conversation c) {
+        boolean next = !c.pinned;
+        Theme.runAsync(
+                () -> conn.request(new Packet(PacketType.CONV_PIN)
+                        .put("convId", c.id).put("pinned", next)),
+                res -> {
+                    if (res.isOk()) {
+                        c.pinned = next;
+                        renderConversations();
+                    }
+                },
+                null
+        );
+    }
+
+    private void openConversation(Conversation conv) {
+        if (conv == null) return;
+        // Đảm bảo hội thoại có trong danh sách local
+        Conversation target = null;
+        for (Conversation c : conversations) {
+            if (c.id == conv.id) {
+                target = c;
+                break;
+            }
+        }
+        if (target == null) {
+            conversations.add(0, conv);
+            target = conv;
+        }
+        target.unreadCount = 0;
+
+        if (!TAB_CHATS.equals(activeTab)) {
+            activeTab = TAB_CHATS;
+            chatNavBtn.setSelected(true);
+            friendNavBtn.setSelected(false);
+            midCards.show(midPanel, TAB_CHATS);
+        }
+
+        Conversation finalTarget = target;
+        activeChat = new ChatPanel(conn, me, finalTarget,
+                sent -> {
+                    finalTarget.lastMessage = previewOf(sent);
+                    finalTarget.lastTime = sent.createdAt;
+                    renderConversations();
+                },
+                newName -> {
+                    finalTarget.name = newName;
+                    renderConversations();
+                },
+                () -> {
+                    conversations.removeIf(x -> x.id == finalTarget.id);
+                    showWelcomeScreen();
+                    renderConversations();
+                });
+
+        rightContent.removeAll();
+        rightContent.add(activeChat, BorderLayout.CENTER);
+        rightContent.revalidate();
+        rightContent.repaint();
+        renderConversations();
+    }
+
+    private void openGroupCreate() {
+        new GroupCreateDialog(this, conn, conv -> {
+            loadConversations();
+            openConversation(conv);
+        }).setVisible(true);
+    }
+
+    private void doLogout() {
+        Theme.runAsync(() -> {
+            try {
+                conn.request(new Packet(PacketType.LOGOUT));
+            } catch (Exception ignored) {
+            }
+            return null;
+        }, r -> {
+            conn.close();
+            dispose();
+            new LoginFrame().setVisible(true);
+        }, err -> {
+            conn.close();
+            dispose();
+            new LoginFrame().setVisible(true);
+        });
+    }
+
+    private static String previewOf(Message m) {
+        if (m.recalled) return "Tin nhắn đã được thu hồi";
+        String kind = m.kind == null ? Message.KIND_TEXT : m.kind;
+        return switch (kind) {
+            case Message.KIND_IMAGE -> "🖼️ [Hình ảnh]";
+            case Message.KIND_FILE -> "📎 " + (m.fileName != null ? m.fileName : "[Tệp]");
+            case Message.KIND_VIDEO -> "🎬 [Video]";
+            case Message.KIND_AUDIO -> "🎤 [Tin nhắn thoại]";
+            default -> m.content == null ? "" : m.content;
+        };
+    }
+
+    // --- Xử lý toàn bộ sự kiện đẩy từ Server (đã chạy trên EDT) ---
+
+    private void onPush(Packet p) {
+        if (p == null || p.type == null) return;
+        switch (p.type) {
+            case PacketType.MSG_NEW -> handleMsgNew(p);
+            case PacketType.PRESENCE -> handlePresence(p);
+            case PacketType.TYPING -> {
+                if (activeChat != null && activeChat.getConvId() == p.num("convId")) {
+                    activeChat.onTyping(p.num("userId"), p.str("userName"), p.bool("typing"));
+                }
+            }
+            case PacketType.SEEN_UPDATE -> {
+                if (activeChat != null && activeChat.getConvId() == p.num("convId")) {
+                    activeChat.onSeenUpdate(p.num("userId"), p.num("lastReadMsgId"));
+                }
+            }
+            case PacketType.MSG_DELIVERED -> {
+                if (activeChat != null && activeChat.getConvId() == p.num("convId")) {
+                    activeChat.onDelivered(p.num("msgId"));
+                }
+            }
+            case PacketType.MSG_RECALLED -> {
+                long convId = p.num("convId");
+                long msgId = p.num("msgId");
+                if (activeChat != null && activeChat.getConvId() == convId) {
+                    activeChat.onMessageRecalled(msgId);
+                }
+                loadConversations();
+            }
+            case PacketType.MSG_REACTED -> {
+                long convId = p.num("convId");
+                if (activeChat != null && activeChat.getConvId() == convId) {
+                    activeChat.onMessageReacted(p.num("msgId"), p.num("userId"), p.str("emoji"));
+                }
+            }
+            case PacketType.FRIEND_EVENT -> handleFriendEvent(p);
+            case PacketType.CONV_UPDATE -> handleConvUpdate(p);
+            default -> {
+            }
+        }
+    }
+
+    private void handleMsgNew(Packet p) {
+        Message m = p.get("message", Message.class);
+        if (m == null) return;
+        boolean isActive = activeChat != null && activeChat.getConvId() == m.convId;
+        if (isActive) {
+            activeChat.onNewMessage(m);
+        }
+
+        Conversation found = null;
+        for (Conversation c : conversations) {
+            if (c.id == m.convId) {
+                found = c;
+                break;
+            }
+        }
+        if (found != null) {
+            found.lastMessage = previewOf(m);
+            found.lastTime = m.createdAt;
+            if (!isActive && m.senderId != me.id) {
+                found.unreadCount++;
+            } else if (isActive) {
+                found.unreadCount = 0;
+            }
+            renderConversations();
+        } else {
+            loadConversations();
+        }
+    }
+
+    private void handlePresence(Packet p) {
+        long userId = p.num("userId");
+        boolean online = p.bool("online");
+        boolean convChanged = false;
+        for (Conversation c : conversations) {
+            if (!c.isGroup && c.peerId == userId) {
+                c.peerOnline = online;
+                convChanged = true;
+            }
+        }
+        if (convChanged) renderConversations();
+        friendPanel.onPresence(userId, online);
+        if (activeChat != null) activeChat.onPresence(userId, online);
+    }
+
+    private void handleFriendEvent(Packet p) {
+        friendPanel.refresh();
+        String action = p.str("action");
+        User u = p.get("user", User.class);
+        String who = u != null && u.name != null ? u.name : "Một người dùng";
+        if ("REQUEST".equalsIgnoreCase(action)) {
+            showToast("💌 " + who + " đã gửi lời mời kết bạn cho bạn");
+        } else if ("ACCEPT".equalsIgnoreCase(action) || "ACCEPTED".equalsIgnoreCase(action)) {
+            showToast("🎉 " + who + " đã chấp nhận lời mời kết bạn");
+        } else if ("REMOVE".equalsIgnoreCase(action) || "REMOVED".equalsIgnoreCase(action)) {
+            showToast("ℹ️ Đã cập nhật danh sách bạn bè");
+        }
+    }
+
+    private void handleConvUpdate(Packet p) {
+        boolean removed = p.bool("removed");
+        long convId = p.num("convId");
+        Conversation updated = p.get("conversation", Conversation.class);
+        if (removed) {
+            conversations.removeIf(c -> c.id == convId);
+            if (activeChat != null && activeChat.getConvId() == convId) {
+                showWelcomeScreen();
+                showToast("ℹ️ Bạn không còn trong cuộc trò chuyện này");
+            }
+            renderConversations();
+            return;
+        }
+        if (updated != null && activeChat != null && activeChat.getConvId() == updated.id) {
+            activeChat.updateConversation(updated);
+        }
+        loadConversations();
+    }
+
+    /** Nút điều hướng trên thanh rail tím mận, có hỗ trợ chấm badge đỏ dâu. */
+    private static class RailButton extends JButton {
+        private boolean selected;
+        private boolean hovered;
+        private int badgeCount;
+
+        RailButton(String emoji, String tooltip) {
+            super(emoji);
+            setToolTipText(tooltip);
+            setFont(Theme.emojiFont(20f));
+            setForeground(Color.WHITE);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setAlignmentX(CENTER_ALIGNMENT);
+            Dimension d = new Dimension(44, 44);
+            setPreferredSize(d);
+            setMinimumSize(d);
+            setMaximumSize(d);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        public void setSelected(boolean selected) {
+            this.selected = selected;
+            repaint();
+        }
+
+        void setBadgeCount(int count) {
+            this.badgeCount = count;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (selected) {
+                g2.setColor(Theme.RAIL_ACTIVE);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            } else if (hovered) {
+                g2.setColor(Theme.RAIL_HOVER);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
+            }
+            g2.dispose();
+            super.paintComponent(g);
+
+            if (badgeCount > 0) {
+                Graphics2D g3 = (Graphics2D) g.create();
+                g3.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                String txt = badgeCount > 9 ? "9+" : String.valueOf(badgeCount);
+                g3.setFont(Theme.uiFont(Font.BOLD, 9.5f));
+                FontMetrics fm = g3.getFontMetrics();
+                int bw = Math.max(16, fm.stringWidth(txt) + 8);
+                int bh = 16;
+                int bx = getWidth() - bw - 1;
+                int by = 1;
+                g3.setColor(Theme.PRIMARY_RED);
+                g3.fillRoundRect(bx, by, bw, bh, bh, bh);
+                g3.setColor(Color.WHITE);
+                g3.drawString(txt, bx + (bw - fm.stringWidth(txt)) / 2, by + fm.getAscent() + 1);
+                g3.dispose();
+            }
+        }
     }
 }

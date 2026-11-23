@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Gói tin trao đổi giữa client và server: mỗi gói là 1 dòng JSON.
  * Ví dụ: {"type":"LOGIN","reqId":1,"data":{"phone":"0901234567","password":"..."}}
@@ -58,6 +61,11 @@ public class Packet {
         return n == null ? 0 : n.asLong();
     }
 
+    public boolean bool(String key) {
+        JsonNode n = data.get(key);
+        return n != null && n.asBoolean(false);
+    }
+
     public boolean isOk() {
         return data.path("ok").asBoolean(false);
     }
@@ -68,6 +76,18 @@ public class Packet {
             return n == null || n.isNull() ? null : MAPPER.treeToValue(n, cls);
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Sai định dạng trường " + key, e);
+        }
+    }
+
+    public <T> List<T> getList(String key, Class<T> cls) {
+        JsonNode n = data.get(key);
+        List<T> out = new ArrayList<>();
+        if (n == null || !n.isArray()) return out;
+        try {
+            for (JsonNode item : n) out.add(MAPPER.treeToValue(item, cls));
+            return out;
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Sai định dạng mảng " + key, e);
         }
     }
 

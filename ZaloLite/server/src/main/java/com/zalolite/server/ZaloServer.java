@@ -1,5 +1,8 @@
 package com.zalolite.server;
 
+import com.zalolite.server.dao.ConversationDao;
+import com.zalolite.server.dao.FriendDao;
+import com.zalolite.server.dao.MessageDao;
 import com.zalolite.server.dao.UserDao;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -18,6 +21,9 @@ public class ZaloServer {
     private final SSLContext ssl;
     private final SessionRegistry sessions = new SessionRegistry();
     private final UserDao users;
+    private final FriendDao friends;
+    private final ConversationDao convs;
+    private final MessageDao messages;
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private volatile SSLServerSocket serverSocket;
 
@@ -25,6 +31,9 @@ public class ZaloServer {
         this.port = port;
         this.ssl = ssl;
         this.users = new UserDao(db);
+        this.friends = new FriendDao(db);
+        this.convs = new ConversationDao(db);
+        this.messages = new MessageDao(db);
     }
 
     public static SSLContext loadSsl(String keystorePath, String password) throws Exception {
@@ -51,7 +60,7 @@ public class ZaloServer {
                 if (serverSocket.isClosed()) break;
                 continue;
             }
-            pool.submit(new ClientHandler(s, sessions, users));
+            pool.submit(new ClientHandler(s, sessions, users, friends, convs, messages));
         }
     }
 
