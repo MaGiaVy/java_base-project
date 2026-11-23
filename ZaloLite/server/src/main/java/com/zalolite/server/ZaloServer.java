@@ -79,6 +79,20 @@ public class ZaloServer {
         db.init();
         SSLContext ssl = loadSsl(cfg.get("keystore.path", "server/certs/server.p12"),
                 cfg.get("keystore.password", "zalolite-lab"));
-        new ZaloServer(cfg.getInt("port", 9000), ssl, db).start();
+        int tcpPort = cfg.getInt("port", 9000);
+        int filePort = cfg.getInt("file.port", 9001);
+        int discoveryPort = cfg.getInt("discovery.port", DiscoveryResponder.DEFAULT_DISCOVERY_PORT);
+
+        FileServer fileServer = new FileServer(filePort);
+        fileServer.startAsync();
+        DiscoveryResponder discovery = new DiscoveryResponder(discoveryPort, tcpPort, filePort);
+        discovery.startAsync();
+        ZaloServer server = new ZaloServer(tcpPort, ssl, db);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try { server.stop(); } catch (Exception ignored) {}
+            fileServer.stop();
+            discovery.stop();
+        }));
+        server.start();
     }
 }

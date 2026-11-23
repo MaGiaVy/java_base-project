@@ -1,12 +1,14 @@
 package com.zalolite.client.ui;
 
 import com.zalolite.client.Connection;
+import com.zalolite.client.LanDiscovery;
 import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
 import com.zalolite.common.User;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.List;
 
 /** Màn hình đăng nhập phong cách Berry Pop. */
 public class LoginFrame extends JFrame {
@@ -14,7 +16,9 @@ public class LoginFrame extends JFrame {
     private final JTextField phoneField = new JTextField();
     private final JPasswordField passField = new JPasswordField();
     private final JButton loginBtn = Theme.primaryButton("Đăng nhập");
+    private final JButton lanBtn = Theme.softButton("🔍 LAN");
     private final JLabel status = new JLabel(" ");
+    private int discoveredFilePort = -1;
 
     public LoginFrame() {
         super("ZaloLite Berry - Đăng nhập");
@@ -63,7 +67,14 @@ public class LoginFrame extends JFrame {
         card.add(Box.createVerticalStrut(4));
         card.add(sub);
         card.add(Box.createVerticalStrut(22));
-        for (JComponent c : new JComponent[]{phoneField, passField, serverField, loginBtn}) {
+        JPanel serverRow = new JPanel(new BorderLayout(6, 0));
+        serverRow.setOpaque(false);
+        serverRow.add(serverField, BorderLayout.CENTER);
+        lanBtn.setToolTipText("Tự động tìm máy chủ ZaloLite trong mạng LAN (UDP Multicast)");
+        lanBtn.setPreferredSize(new Dimension(78, 40));
+        serverRow.add(lanBtn, BorderLayout.EAST);
+
+        for (JComponent c : new JComponent[]{phoneField, passField, serverRow, loginBtn}) {
             c.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
             c.setAlignmentX(CENTER_ALIGNMENT);
             card.add(c);
@@ -81,7 +92,41 @@ public class LoginFrame extends JFrame {
 
         loginBtn.addActionListener(e -> doLogin());
         passField.addActionListener(e -> doLogin());
+        lanBtn.addActionListener(e -> discoverLan());
         registerBtn.addActionListener(e -> new RegisterDialog(this, serverField.getText()).setVisible(true));
+    }
+
+    private void discoverLan() {
+        lanBtn.setEnabled(false);
+        status.setForeground(Theme.TEXT_MUTED);
+        status.setText("Đang tìm máy chủ trong LAN...");
+        Theme.runAsync(
+                () -> LanDiscovery.discover(1500),
+                found -> {
+                    lanBtn.setEnabled(true);
+                    if (found.isEmpty()) {
+                        status.setForeground(Theme.PRIMARY_RED_DARK);
+                        status.setText("Không thấy máy chủ nào trong LAN");
+                        return;
+                    }
+                    LanDiscovery.DiscoveredServer chosen = found.get(0);
+                    if (found.size() > 1) {
+                        Object pick = JOptionPane.showInputDialog(this,
+                                "Chọn máy chủ tìm thấy:", "Tìm máy chủ LAN",
+                                JOptionPane.PLAIN_MESSAGE, null, found.toArray(), found.get(0));
+                        if (pick instanceof LanDiscovery.DiscoveredServer ds) chosen = ds;
+                    }
+                    serverField.setText(chosen.host() + ":" + chosen.tcpPort());
+                    discoveredFilePort = chosen.filePort();
+                    status.setForeground(Theme.ONLINE_GREEN);
+                    status.setText("Đã tìm thấy: " + chosen.host() + ":" + chosen.tcpPort());
+                },
+                err -> {
+                    lanBtn.setEnabled(true);
+                    status.setForeground(Theme.PRIMARY_RED_DARK);
+                    status.setText(err);
+                }
+        );
     }
 
     /** Tách "host:port"; mặc định cổng 9000. */
@@ -102,9 +147,11 @@ public class LoginFrame extends JFrame {
         loginBtn.setEnabled(false);
         status.setText(" ");
         String server = serverField.getText();
+        int fPort = discoveredFilePort;
         Theme.runAsync(() -> {
             Object[] hp = parseServer(server);
-            Connection conn = new Connection((String) hp[0], (int) hp[1]);
+            int tcpPort = (int) hp[1];
+            Connection conn = new Connection((String) hp[0], tcpPort, fPort > 0 ? fPort : tcpPort + 1);
             Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
             if (!res.isOk()) {
                 conn.close();

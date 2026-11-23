@@ -1,6 +1,7 @@
 package com.zalolite.client.ui;
 
 import com.zalolite.client.Connection;
+import com.zalolite.client.P2pTransfer;
 import com.zalolite.common.Conversation;
 import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
@@ -15,9 +16,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Cửa sổ chính ZaloLite Berry:
@@ -29,6 +33,8 @@ public class MainFrame extends JFrame {
 
     private final Connection conn;
     private final User me;
+    private final Map<String, File> localMediaFiles = new ConcurrentHashMap<>();
+    private P2pTransfer p2p;
 
     // Left rail
     private final RailButton chatNavBtn;
@@ -147,12 +153,32 @@ public class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
+                if (p2p != null) p2p.stop();
                 conn.close();
             }
         });
 
+        startP2pListener();
         loadConversations();
         friendPanel.refresh();
+    }
+
+    private void startP2pListener() {
+        try {
+            p2p = new P2pTransfer(this::onP2pFileReceived);
+            p2p.start();
+            int port = p2p.getListenPort();
+            System.out.println("[INFO] P2P đang nghe :" + port);
+            Theme.runAsync(() -> conn.request(new Packet(PacketType.P2P_REGISTER).put("port", port)), null, null);
+        } catch (Exception e) {
+            System.err.println("[WARN] Không mở được cổng P2P: " + e.getMessage());
+        }
+    }
+
+    private void onP2pFileReceived(P2pTransfer.ReceivedP2pFile f) {
+        String key = "p2p://" + f.convId() + "/" + f.fileName();
+        localMediaFiles.put(key, f.savedFile());
+        SwingUtilities.invokeLater(() -> showToast("⚡ Đã nhận qua P2P: " + f.fileName()));
     }
 
     private JPanel buildConversationsTab() {
@@ -434,7 +460,7 @@ public class MainFrame extends JFrame {
         }
 
         Conversation finalTarget = target;
-        activeChat = new ChatPanel(conn, me, finalTarget,
+        activeChat = new ChatPanel(conn, me, finalTarget, localMediaFiles,
                 sent -> {
                     finalTarget.lastMessage = previewOf(sent);
                     finalTarget.lastTime = sent.createdAt;
@@ -465,6 +491,7 @@ public class MainFrame extends JFrame {
     }
 
     private void doLogout() {
+        if (p2p != null) p2p.stop();
         Theme.runAsync(() -> {
             try {
                 conn.request(new Packet(PacketType.LOGOUT));

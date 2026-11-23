@@ -1,17 +1,19 @@
 package com.zalolite.client.ui;
 
+import com.zalolite.client.AudioHelper;
 import com.zalolite.common.Message;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/** Một bong bóng tin nhắn (đi/đến/hệ thống) kèm reaction, trạng thái xem và menu chuột phải. */
+/** Một bong bóng tin nhắn (đi/đến/hệ thống) kèm media, reaction, trạng thái xem và menu chuột phải. */
 public class MessageBubble extends JPanel {
     private static final String[] QUICK_REACTIONS = {"❤️", "😆", "😮", "😢", "👍"};
     private static final int MAX_TEXT_WIDTH = 360;
@@ -21,18 +23,23 @@ public class MessageBubble extends JPanel {
     private final boolean isGroup;
     private final BiConsumer<Message, String> onReact;
     private final Consumer<Message> onRecall;
+    private final BiConsumer<Message, Consumer<File>> mediaResolver;
+    private final AudioHelper audioHelper;
 
     private final JPanel bodyHolder = new JPanel(new BorderLayout());
     private final JPanel reactionsBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
     private JLabel metaLabel;
 
     public MessageBubble(Message msg, long meId, boolean isGroup,
-                         BiConsumer<Message, String> onReact, Consumer<Message> onRecall) {
+                         BiConsumer<Message, String> onReact, Consumer<Message> onRecall,
+                         BiConsumer<Message, Consumer<File>> mediaResolver, AudioHelper audioHelper) {
         this.msg = msg;
         this.meId = meId;
         this.isGroup = isGroup;
         this.onReact = onReact;
         this.onRecall = onRecall;
+        this.mediaResolver = mediaResolver;
+        this.audioHelper = audioHelper;
 
         setOpaque(false);
         setLayout(new BorderLayout());
@@ -146,16 +153,132 @@ public class MessageBubble extends JPanel {
     private JComponent buildContentComponent(boolean mine) {
         Color fg = mine ? Color.WHITE : Theme.TEXT_DARK;
         String kind = msg.kind == null ? Message.KIND_TEXT : msg.kind;
-        String text;
-        switch (kind) {
-            case Message.KIND_IMAGE -> text = "🖼️ Hình ảnh" + formatAttachmentMeta();
-            case Message.KIND_FILE -> text = "📎 Tệp đính kèm" + formatAttachmentMeta();
-            case Message.KIND_VIDEO -> text = "🎬 Video" + formatAttachmentMeta();
-            case Message.KIND_AUDIO -> text = "🎤 Tin nhắn thoại" +
-                    (msg.durationSec > 0 ? " (" + msg.durationSec + "s)" : "");
-            default -> text = msg.content == null ? "" : msg.content;
+        return switch (kind) {
+            case Message.KIND_IMAGE -> buildImageCard(mine, fg);
+            case Message.KIND_VIDEO -> buildFileActionCard(mine, fg, "🎬", "▶ Phát video",
+                    f -> MediaViewer.openWithSystemPlayer(this, f));
+            case Message.KIND_FILE -> buildFileActionCard(mine, fg, "📎", "⬇ Mở / Tải về",
+                    f -> MediaViewer.openWithSystemPlayer(this, f));
+            case Message.KIND_AUDIO -> buildAudioCard(mine, fg);
+            default -> buildTextArea(msg.content == null ? "" : msg.content, fg);
+        };
+    }
+
+    private JComponent buildImageCard(boolean mine, Color fg) {
+        JPanel box = new JPanel();
+        box.setOpaque(false);
+        box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
+
+        JLabel imgLbl = new JLabel("🖼️ Đang tải ảnh...");
+        imgLbl.setFont(Theme.emojiFont(12.5f));
+        imgLbl.setForeground(fg);
+        imgLbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        imgLbl.setAlignmentX(LEFT_ALIGNMENT);
+        box.add(imgLbl);
+
+        if (msg.fileName != null && !msg.fileName.isBlank()) {
+            JLabel cap = new JLabel(msg.fileName + (msg.fileSize > 0 ? " (" + formatFileSize(msg.fileSize) + ")" : ""));
+            cap.setFont(Theme.uiFont(11f));
+            cap.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+            cap.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+            cap.setAlignmentX(LEFT_ALIGNMENT);
+            box.add(cap);
         }
 
+        if (mediaResolver != null) {
+            mediaResolver.accept(msg, file -> Theme.runAsync(
+                    () -> MediaViewer.loadThumbnail(file, 220, 180),
+                    icon -> {
+                        if (icon != null) {
+                            imgLbl.setText("");
+                            imgLbl.setIcon(icon);
+                            imgLbl.setToolTipText("Bấm để xem ảnh lớn");
+                            imgLbl.addMouseListener(new MouseAdapter() {
+                                @Override
+                                public void mouseClicked(MouseEvent e) {
+                                    if (SwingUtilities.isLeftMouseButton(e)) {
+                                        MediaViewer.showImageDialog(MessageBubble.this, file, msg.fileName);
+                                    }
+                                }
+                            });
+                        } else {
+                            imgLbl.setText("🖼️ " + (msg.fileName == null ? "Hình ảnh" : msg.fileName));
+                        }
+                        revalidate();
+                        repaint();
+                    },
+                    err -> imgLbl.setText("🖼️ Không tải được ảnh")
+            ));
+        }
+        return box;
+    }
+
+    private JComponent buildFileActionCard(boolean mine, Color fg, String icon, String btnText, Consumer<File> onFile) {
+        JPanel box = new JPanel(new BorderLayout(10, 4));
+        box.setOpaque(false);
+        String name = (msg.fileName == null || msg.fileName.isBlank()) ? "Tệp đính kèm" : msg.fileName;
+        String meta = msg.fileSize > 0 ? formatFileSize(msg.fileSize) : "";
+        JLabel title = new JLabel(icon + " " + name + (meta.isEmpty() ? "" : " (" + meta + ")"));
+        title.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
+        title.setForeground(fg);
+
+        JButton act = mine ? Theme.softButton(btnText) : Theme.primaryButton(btnText);
+        act.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+        act.addActionListener(e -> {
+            if (mediaResolver == null) return;
+            act.setEnabled(false);
+            mediaResolver.accept(msg, file -> {
+                act.setEnabled(true);
+                onFile.accept(file);
+            });
+        });
+        box.add(title, BorderLayout.NORTH);
+        box.add(act, BorderLayout.SOUTH);
+        return box;
+    }
+
+    private JComponent buildAudioCard(boolean mine, Color fg) {
+        JPanel box = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        box.setOpaque(false);
+        JButton playBtn = mine ? Theme.softButton("▶ Nghe") : Theme.primaryButton("▶ Nghe");
+        playBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+        JLabel lbl = new JLabel("🎤 Tin nhắn thoại" + (msg.durationSec > 0 ? " (" + msg.durationSec + "s)" : ""));
+        lbl.setFont(Theme.emojiFont(12.5f));
+        lbl.setForeground(fg);
+
+        final boolean[] playing = {false};
+        playBtn.addActionListener(e -> {
+            if (audioHelper == null || mediaResolver == null) return;
+            if (playing[0]) {
+                audioHelper.stopPlayback();
+                playing[0] = false;
+                playBtn.setText("▶ Nghe");
+                return;
+            }
+            playBtn.setEnabled(false);
+            mediaResolver.accept(msg, file -> {
+                playBtn.setEnabled(true);
+                try {
+                    playing[0] = true;
+                    playBtn.setText("⏹ Dừng");
+                    audioHelper.play(file, () -> SwingUtilities.invokeLater(() -> {
+                        playing[0] = false;
+                        playBtn.setText("▶ Nghe");
+                    }));
+                } catch (Exception ex) {
+                    playing[0] = false;
+                    playBtn.setText("▶ Nghe");
+                    JOptionPane.showMessageDialog(this, "Không phát được âm thanh: " + ex.getMessage());
+                }
+            });
+        });
+
+        box.add(playBtn);
+        box.add(lbl);
+        return box;
+    }
+
+    private JComponent buildTextArea(String text, Color fg) {
         JTextArea area = new JTextArea(text);
         area.setFont(Theme.emojiFont(13.5f));
         area.setForeground(fg);
@@ -289,7 +412,9 @@ public class MessageBubble extends JPanel {
     private String buildMetaText() {
         StringBuilder sb = new StringBuilder(Theme.formatClock(msg.createdAt));
         if ("P2P".equalsIgnoreCase(msg.transport)) {
-            sb.append(" ⚡");
+            sb.append(" [P2P ⚡]");
+        } else if ("SERVER".equalsIgnoreCase(msg.transport)) {
+            sb.append(" [Server]");
         }
         if (msg.senderId == meId && !msg.recalled) {
             String state = msg.deliveryState == null ? Message.STATE_SENT : msg.deliveryState;

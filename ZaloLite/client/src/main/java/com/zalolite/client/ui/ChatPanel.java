@@ -1,6 +1,9 @@
 package com.zalolite.client.ui;
 
+import com.zalolite.client.AudioHelper;
 import com.zalolite.client.Connection;
+import com.zalolite.client.FileTransfer;
+import com.zalolite.client.P2pTransfer;
 import com.zalolite.common.Conversation;
 import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
@@ -10,7 +13,9 @@ import com.zalolite.common.User;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.io.File;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +32,8 @@ public class ChatPanel extends JPanel {
     private final Connection conn;
     private final User me;
     private final Conversation conv;
+    private final Map<String, File> localMediaFiles;
+    private final AudioHelper audioHelper = new AudioHelper();
     private final Consumer<Message> onSentCallback;
     private final Runnable onGroupLeft;
     private final Consumer<String> onGroupRenamed;
@@ -62,14 +69,18 @@ public class ChatPanel extends JPanel {
     // Composer
     private final JTextField inputField = new JTextField();
     private final JButton sendBtn = Theme.primaryButton("Gửi");
+    private final JButton voiceBtn;
+    private final JProgressBar transferBar = new JProgressBar(0, 100);
 
     public ChatPanel(Connection conn, User me, Conversation conv,
+                     Map<String, File> localMediaFiles,
                      Consumer<Message> onSentCallback,
                      Consumer<String> onGroupRenamed,
                      Runnable onGroupLeft) {
         this.conn = conn;
         this.me = me;
         this.conv = conv;
+        this.localMediaFiles = localMediaFiles;
         this.onSentCallback = onSentCallback;
         this.onGroupRenamed = onGroupRenamed;
         this.onGroupLeft = onGroupLeft;
@@ -107,7 +118,7 @@ public class ChatPanel extends JPanel {
         JPanel headerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         headerActions.setOpaque(false);
         Theme.PillLabel p2pPill = new Theme.PillLabel("⚡ P2P", Theme.BUBBLE_OTHER, Theme.PRIMARY_PURPLE, 11.5f, true);
-        p2pPill.setToolTipText("Sẵn sàng truyền tải P2P (Đợt 3)");
+        p2pPill.setToolTipText("File/ảnh/thoại ưu tiên P2P trực tiếp, tự chuyển về Server nếu ngoại tuyến");
         headerActions.add(p2pPill);
 
         JButton searchToggle = iconButton("🔍", "Tìm kiếm trong cuộc trò chuyện");
@@ -180,10 +191,21 @@ public class ChatPanel extends JPanel {
         bottom.setBackground(Color.WHITE);
         bottom.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_PINK));
 
+        JPanel topBottom = new JPanel(new BorderLayout());
+        topBottom.setOpaque(false);
         typingLabel.setFont(Theme.uiFont(Font.ITALIC, 11.5f));
         typingLabel.setForeground(Theme.TEXT_MUTED);
         typingLabel.setBorder(BorderFactory.createEmptyBorder(4, 16, 2, 16));
-        bottom.add(typingLabel, BorderLayout.NORTH);
+        topBottom.add(typingLabel, BorderLayout.NORTH);
+
+        transferBar.setStringPainted(true);
+        transferBar.setForeground(Theme.PRIMARY_RED);
+        transferBar.setBackground(Theme.BUBBLE_OTHER);
+        transferBar.setFont(Theme.uiFont(Font.BOLD, 11f));
+        transferBar.setPreferredSize(new Dimension(0, 18));
+        transferBar.setVisible(false);
+        topBottom.add(transferBar, BorderLayout.SOUTH);
+        bottom.add(topBottom, BorderLayout.NORTH);
 
         JPanel composer = new JPanel(new BorderLayout(8, 0));
         composer.setBackground(Color.WHITE);
@@ -197,10 +219,18 @@ public class ChatPanel extends JPanel {
             picker.show(emojiBtn, 0, -235);
         });
         leftTools.add(emojiBtn);
-        // Hook giữ chỗ cho Đợt 3 (ảnh, tệp, ghi âm)
-        leftTools.add(placeholderMediaButton("🖼️", "Gửi ảnh — Sẽ mở khoá ở Đợt 3"));
-        leftTools.add(placeholderMediaButton("📎", "Gửi tệp — Sẽ mở khoá ở Đợt 3"));
-        leftTools.add(placeholderMediaButton("🎤", "Gửi tin nhắn thoại — Sẽ mở khoá ở Đợt 3"));
+
+        JButton imgBtn = iconButton("🖼️", "Gửi hình ảnh");
+        imgBtn.addActionListener(e -> chooseAndSendImage());
+        leftTools.add(imgBtn);
+
+        JButton fileBtn = iconButton("📎", "Gửi tệp, video hoặc âm thanh (.wav)");
+        fileBtn.addActionListener(e -> chooseAndSendFile());
+        leftTools.add(fileBtn);
+
+        voiceBtn = iconButton("🎤", "Bấm để ghi âm tin nhắn thoại (tối đa 60s)");
+        voiceBtn.addActionListener(e -> toggleVoiceRecord());
+        leftTools.add(voiceBtn);
         composer.add(leftTools, BorderLayout.WEST);
 
         inputField.setFont(Theme.emojiFont(13.5f));
@@ -280,14 +310,6 @@ public class ChatPanel extends JPanel {
         b.setContentAreaFilled(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         b.setPreferredSize(new Dimension(34, 34));
-        return b;
-    }
-
-    private JButton placeholderMediaButton(String emoji, String tooltip) {
-        JButton b = iconButton(emoji, tooltip);
-        b.setForeground(Theme.TEXT_MUTED);
-        b.addActionListener(e -> JOptionPane.showMessageDialog(
-                this, tooltip, "ZaloLite Berry", JOptionPane.INFORMATION_MESSAGE));
         return b;
     }
 
@@ -458,7 +480,8 @@ public class ChatPanel extends JPanel {
                 messagesBox.add(buildDateDivider(m.createdAt));
                 prevDay = d;
             }
-            MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall);
+            MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
+                    this::resolveMediaFile, audioHelper);
             bubblesById.put(m.id, bubble);
             messagesBox.add(bubble);
         }
@@ -487,7 +510,8 @@ public class ChatPanel extends JPanel {
             messagesBox.add(buildDateDivider(m.createdAt));
         }
         messages.add(m);
-        MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall);
+        MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
+                this::resolveMediaFile, audioHelper);
         bubblesById.put(m.id, bubble);
         messagesBox.add(bubble);
         messagesBox.revalidate();
@@ -532,6 +556,194 @@ public class ChatPanel extends JPanel {
                 err -> {
                     sendBtn.setEnabled(true);
                     JOptionPane.showMessageDialog(this, err);
+                }
+        );
+    }
+
+    // --- Gửi ảnh, file, video, tin nhắn thoại (P2P ưu tiên -> Server fallback) ---
+
+    private void chooseAndSendImage() {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Chọn hình ảnh");
+        fc.setFileFilter(new FileNameExtensionFilter("Hình ảnh (PNG, JPG, GIF)", "png", "jpg", "jpeg", "gif"));
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            sendMediaFile(fc.getSelectedFile(), Message.KIND_IMAGE, 0);
+        }
+    }
+
+    private void chooseAndSendFile() {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Chọn tệp / video / âm thanh");
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File f = fc.getSelectedFile();
+            String lower = f.getName().toLowerCase();
+            if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif")) {
+                sendMediaFile(f, Message.KIND_IMAGE, 0);
+            } else if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv")
+                    || lower.endsWith(".avi") || lower.endsWith(".webm")) {
+                sendMediaFile(f, Message.KIND_VIDEO, 0);
+            } else if (lower.endsWith(".wav")) {
+                int dur = 0;
+                try { dur = AudioHelper.wavDurationSec(f); } catch (Exception ignored) {}
+                sendMediaFile(f, Message.KIND_AUDIO, dur);
+            } else {
+                sendMediaFile(f, Message.KIND_FILE, 0);
+            }
+        }
+    }
+
+    private void toggleVoiceRecord() {
+        if (audioHelper.isRecording()) {
+            finishVoiceRecord();
+            return;
+        }
+        try {
+            audioHelper.startRecording(() -> SwingUtilities.invokeLater(this::finishVoiceRecord));
+            voiceBtn.setText("⏹");
+            voiceBtn.setForeground(Theme.PRIMARY_RED);
+            voiceBtn.setToolTipText("Đang ghi âm... Bấm lại để gửi");
+        } catch (Exception ex) {
+            // Dự phòng nếu máy demo không có micro -> cho chọn file .wav có sẵn
+            int pick = JOptionPane.showConfirmDialog(this,
+                    "Không mở được micro (" + ex.getMessage() + ").\nBạn muốn chọn file âm thanh (.wav) có sẵn để gửi không?",
+                    "Tin nhắn thoại", JOptionPane.YES_NO_OPTION);
+            if (pick == JOptionPane.YES_OPTION) {
+                JFileChooser fc = new JFileChooser();
+                fc.setFileFilter(new FileNameExtensionFilter("Âm thanh WAV (*.wav)", "wav"));
+                if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    File f = fc.getSelectedFile();
+                    int dur = 0;
+                    try { dur = AudioHelper.wavDurationSec(f); } catch (Exception ignored) {}
+                    sendMediaFile(f, Message.KIND_AUDIO, dur);
+                }
+            }
+        }
+    }
+
+    private void finishVoiceRecord() {
+        voiceBtn.setText("🎤");
+        voiceBtn.setForeground(Theme.TEXT_DARK);
+        voiceBtn.setToolTipText("Bấm để ghi âm tin nhắn thoại (tối đa 60s)");
+        if (!audioHelper.isRecording()) return;
+        try {
+            AudioHelper.RecordedAudio rec = audioHelper.stopRecording();
+            if (rec != null && rec.file().exists() && rec.file().length() > 44) {
+                sendMediaFile(rec.file(), Message.KIND_AUDIO, rec.durationSec());
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Lỗi lưu âm thanh: " + ex.getMessage());
+        }
+    }
+
+    private void showProgress(String label, long done, long total) {
+        SwingUtilities.invokeLater(() -> {
+            int pct = total > 0 ? (int) Math.min(100, (done * 100) / total) : 0;
+            transferBar.setValue(pct);
+            transferBar.setString(label + " " + pct + "%");
+            transferBar.setVisible(true);
+        });
+    }
+
+    private void hideProgress() {
+        SwingUtilities.invokeLater(() -> transferBar.setVisible(false));
+    }
+
+    private void sendMediaFile(File file, String kind, int durationSec) {
+        if (file == null || !file.isFile()) return;
+        if (file.length() > FileTransfer.MAX_FILE_SIZE) {
+            JOptionPane.showMessageDialog(this, "Tệp vượt quá giới hạn 100MB.");
+            return;
+        }
+        showProgress("Đang chuẩn bị " + file.getName(), 0, file.length());
+        Theme.runAsync(() -> {
+            String transport = "SERVER";
+            String filePath = null;
+
+            // 1. Ưu tiên P2P trực tiếp cho chat 1-1
+            if (!conv.isGroup && conv.peerId > 0) {
+                try {
+                    Packet lk = conn.request(new Packet(PacketType.P2P_LOOKUP).put("userId", conv.peerId));
+                    if (lk.isOk() && lk.bool("online")) {
+                        String ip = lk.str("ip");
+                        int port = (int) lk.num("port");
+                        if (ip != null && port > 0) {
+                            P2pTransfer.sendDirect(ip, port, conv.id, me.id, kind, file, durationSec,
+                                    (d, t) -> showProgress("⚡ P2P: " + file.getName(), d, t));
+                            transport = "P2P";
+                            filePath = "p2p://" + conv.id + "/" + file.getName();
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Tự động rơi về Server nếu P2P timeout / Firewall chặn
+                }
+            }
+
+            // 2. Fallback qua FileServer cổng 9001
+            if (filePath == null) {
+                transport = "SERVER";
+                filePath = FileTransfer.upload(conn.getHost(), conn.getFilePort(), file,
+                        (d, t) -> showProgress("Đang gửi (Server): " + file.getName(), d, t));
+            }
+            if (localMediaFiles != null) {
+                localMediaFiles.put(filePath, file);
+            }
+
+            Packet req = new Packet(PacketType.MSG_SEND)
+                    .put("convId", conv.id)
+                    .put("kind", kind)
+                    .put("content", file.getName())
+                    .put("filePath", filePath)
+                    .put("fileName", file.getName())
+                    .put("fileSize", file.length())
+                    .put("durationSec", durationSec)
+                    .put("transport", transport);
+            return conn.request(req);
+        }, res -> {
+            hideProgress();
+            if (!res.isOk()) {
+                JOptionPane.showMessageDialog(this, res.str("error"));
+                return;
+            }
+            Message sent = res.get("message", Message.class);
+            if (sent != null) {
+                appendMessageToView(sent);
+                if (onSentCallback != null) onSentCallback.accept(sent);
+            }
+        }, err -> {
+            hideProgress();
+            JOptionPane.showMessageDialog(this, "Không gửi được tệp: " + err);
+        });
+    }
+
+    private void resolveMediaFile(Message m, Consumer<File> onReady) {
+        if (m == null || m.filePath == null || m.filePath.isBlank()) return;
+        File local = localMediaFiles == null ? null : localMediaFiles.get(m.filePath);
+        if (local != null && local.isFile()) {
+            onReady.accept(local);
+            return;
+        }
+        if (m.filePath.startsWith("p2p://")) {
+            JOptionPane.showMessageDialog(this, "Tệp P2P chỉ lưu trên thiết bị nhận trực tiếp trong phiên đó.");
+            return;
+        }
+        File cached = FileTransfer.cacheFile(m.filePath, m.fileName == null ? "file" : m.fileName);
+        if (cached.isFile() && (m.fileSize <= 0 || cached.length() == m.fileSize)) {
+            if (localMediaFiles != null) localMediaFiles.put(m.filePath, cached);
+            onReady.accept(cached);
+            return;
+        }
+        showProgress("Đang tải " + (m.fileName == null ? "tệp" : m.fileName), 0, Math.max(1, m.fileSize));
+        Theme.runAsync(
+                () -> FileTransfer.download(conn.getHost(), conn.getFilePort(), m.filePath, cached,
+                        (d, t) -> showProgress("Đang tải: " + (m.fileName == null ? "tệp" : m.fileName), d, t)),
+                file -> {
+                    hideProgress();
+                    if (localMediaFiles != null) localMediaFiles.put(m.filePath, file);
+                    onReady.accept(file);
+                },
+                err -> {
+                    hideProgress();
+                    JOptionPane.showMessageDialog(this, "Lỗi tải tệp: " + err);
                 }
         );
     }

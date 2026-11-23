@@ -29,6 +29,9 @@ import java.util.function.Consumer;
  *  - gói khác (sự kiện đẩy: tin nhắn mới, lời mời kết bạn...) -> gọi listener trên luồng Swing
  */
 public class Connection {
+    private final String host;
+    private final int port;
+    private final int filePort;
     private final SSLSocket socket;
     private final BufferedWriter out;
     private final AtomicLong seq = new AtomicLong();
@@ -37,6 +40,13 @@ public class Connection {
     private volatile Runnable onDisconnect;
 
     public Connection(String host, int port) throws Exception {
+        this(host, port, port + 1);
+    }
+
+    public Connection(String host, int port, int filePort) throws Exception {
+        this.host = host;
+        this.port = port;
+        this.filePort = filePort;
         socket = (SSLSocket) trustedContext().getSocketFactory().createSocket(host, port);
         socket.startHandshake();
         out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
@@ -44,6 +54,10 @@ public class Connection {
         reader.setDaemon(true);
         reader.start();
     }
+
+    public String getHost() { return host; }
+    public int getPort() { return port; }
+    public int getFilePort() { return filePort; }
 
     /** Chỉ tin chứng chỉ của server ZaloLite (truststore.p12 đóng gói trong client, chỉ chứa public cert). */
     private static SSLContext trustedContext() throws Exception {
