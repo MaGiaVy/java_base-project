@@ -129,6 +129,11 @@ public final class VoiceCallDialog extends JDialog {
         return new VoiceCallDialog(owner, callerName, callerId, true, onAccept, onReject);
     }
 
+    public void setConnected(VoiceCallSession session, Runnable onHangup) {
+        if (onHangup != null) this.onEndCallback = onHangup;
+        setConnected(session);
+    }
+
     public void setConnected(VoiceCallSession session) {
         runOnEdt(() -> {
             this.session = session;

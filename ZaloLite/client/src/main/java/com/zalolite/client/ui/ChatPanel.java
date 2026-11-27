@@ -325,6 +325,7 @@ public class ChatPanel extends JPanel {
         conv.name = updated.name;
         conv.peerOnline = updated.peerOnline;
         conv.ownerId = updated.ownerId;
+        conv.memberCount = updated.memberCount;
         titleLabel.setText(conv.name);
         headerAvatar.setNameAndColor(
                 conv.name,
@@ -332,6 +333,16 @@ public class ChatPanel extends JPanel {
                 !conv.isGroup,
                 conv.peerOnline);
         refreshSubtitle();
+    }
+
+    /** Dọn mic/loa và timer khi đổi hội thoại hoặc đóng cửa sổ. */
+    public void cleanup() {
+        typingClearTimer.stop();
+        typingStopTimer.stop();
+        audioHelper.stopPlayback();
+        if (audioHelper.isRecording()) {
+            try { audioHelper.stopRecording(); } catch (Exception ignored) {}
+        }
     }
 
     private void refreshSubtitle() {
@@ -725,7 +736,7 @@ public class ChatPanel extends JPanel {
                             P2pTransfer.sendDirect(ip, port, conv.id, me.id, kind, file, durationSec,
                                     (d, t) -> showProgress("⚡ P2P: " + file.getName(), d, t));
                             transport = "P2P";
-                            filePath = "p2p://" + conv.id + "/" + file.getName();
+                            filePath = "p2p://" + conv.id + "/" + P2pTransfer.sanitizeFileName(file.getName());
                         }
                     }
                 } catch (Exception ignored) {
@@ -771,14 +782,18 @@ public class ChatPanel extends JPanel {
     }
 
     private void resolveMediaFile(Message m, Consumer<File> onReady) {
-        if (m == null || m.filePath == null || m.filePath.isBlank()) return;
+        if (m == null || m.filePath == null || m.filePath.isBlank()) {
+            onReady.accept(null);
+            return;
+        }
         File local = localMediaFiles == null ? null : localMediaFiles.get(m.filePath);
         if (local != null && local.isFile()) {
             onReady.accept(local);
             return;
         }
         if (m.filePath.startsWith("p2p://")) {
-            JOptionPane.showMessageDialog(this, "Tệp P2P chỉ lưu trên thiết bị nhận trực tiếp trong phiên đó.");
+            // Không hiện JOptionPane để tránh bão popup khi mở lại lịch sử nhiều ảnh P2P cũ
+            onReady.accept(null);
             return;
         }
         File cached = FileTransfer.cacheFile(m.filePath, m.fileName == null ? "file" : m.fileName);
@@ -798,7 +813,7 @@ public class ChatPanel extends JPanel {
                 },
                 err -> {
                     hideProgress();
-                    JOptionPane.showMessageDialog(this, "Lỗi tải tệp: " + err);
+                    onReady.accept(null);
                 }
         );
     }

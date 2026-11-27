@@ -165,12 +165,17 @@ public class LoginFrame extends JFrame {
             Object[] hp = parseServer(server);
             int tcpPort = (int) hp[1];
             Connection conn = new Connection((String) hp[0], tcpPort, fPort > 0 ? fPort : tcpPort + 1);
-            Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
-            if (!res.isOk()) {
+            try {
+                Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
+                if (!res.isOk()) {
+                    conn.close();
+                    throw new Exception(res.str("error"));
+                }
+                return new Object[]{conn, res.get("user", User.class)};
+            } catch (Exception ex) {
                 conn.close();
-                throw new Exception(res.str("error"));
+                throw ex;
             }
-            return new Object[]{conn, res.get("user", User.class)};
         }, r -> {
             loginBtn.setEnabled(true);
             new MainFrame((Connection) r[0], (User) r[1]).setVisible(true);

@@ -179,6 +179,7 @@ public class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
+                if (activeChat != null) activeChat.cleanup();
                 endActiveCall(false, null);
                 if (p2p != null) p2p.stop();
                 conn.close();
@@ -262,6 +263,7 @@ public class MainFrame extends JFrame {
     }
 
     private void showWelcomeScreen() {
+        if (activeChat != null) activeChat.cleanup();
         activeChat = null;
         rightContent.removeAll();
         JPanel wrap = new JPanel(new GridBagLayout());
@@ -486,6 +488,7 @@ public class MainFrame extends JFrame {
             midCards.show(midPanel, TAB_CHATS);
         }
 
+        if (activeChat != null) activeChat.cleanup();
         Conversation finalTarget = target;
         activeChat = new ChatPanel(conn, me, finalTarget, localMediaFiles,
                 () -> new ArrayList<>(conversations),
@@ -520,6 +523,7 @@ public class MainFrame extends JFrame {
     }
 
     private void doLogout() {
+        if (activeChat != null) activeChat.cleanup();
         endActiveCall(true, null);
         if (p2p != null) p2p.stop();
         Theme.runAsync(() -> {
@@ -591,8 +595,17 @@ public class MainFrame extends JFrame {
             case PacketType.CONV_UPDATE -> handleConvUpdate(p);
             case PacketType.CALL_OFFER -> handleCallOffer(p);
             case PacketType.CALL_ANSWER -> handleCallAnswer(p);
-            case PacketType.CALL_REJECT -> endActiveCall(false, "Đối phương đã từ chối cuộc gọi");
-            case PacketType.CALL_END -> endActiveCall(false, "Cuộc gọi đã kết thúc");
+            case PacketType.CALL_REJECT -> {
+                if (activeCallPeerId == 0 || p.num("calleeId") == activeCallPeerId) {
+                    String reason = p.str("reason");
+                    endActiveCall(false, (reason != null && !reason.isBlank()) ? reason : "Đối phương đã từ chối cuộc gọi");
+                }
+            }
+            case PacketType.CALL_END -> {
+                if (activeCallPeerId == 0 || p.num("userId") == activeCallPeerId) {
+                    endActiveCall(false, "Cuộc gọi đã kết thúc");
+                }
+            }
             default -> {
             }
         }
@@ -638,7 +651,7 @@ public class MainFrame extends JFrame {
                         activeCallSession = new VoiceCallSession();
                         int myPort = activeCallSession.getLocalPort();
                         activeCallSession.startAudio(callerIp, callerUdpPort);
-                        if (activeCallDialog != null) activeCallDialog.setConnected(activeCallSession);
+                        if (activeCallDialog != null) activeCallDialog.setConnected(activeCallSession, () -> endActiveCall(true, null));
                         Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_ANSWER)
                                 .put("callerId", callerId).put("udpPort", myPort)), null, null);
                     } catch (Exception ex) {

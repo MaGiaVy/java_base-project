@@ -157,13 +157,13 @@ public class P2pTransfer {
                 }
             }
 
-            out.writeUTF("DONE");
-            out.flush();
-
             if (onReceived != null) {
                 onReceived.accept(new ReceivedP2pFile(
                         convId, senderId, kind, target.toFile(), cleanName, size, durationSec));
             }
+
+            out.writeUTF("DONE");
+            out.flush();
         } catch (IOException e) {
             if (target != null) {
                 try {
@@ -174,7 +174,7 @@ public class P2pTransfer {
         }
     }
 
-    static String sanitizeFileName(String raw) {
+    public static String sanitizeFileName(String raw) {
         if (raw == null || raw.isBlank()) {
             return "file.bin";
         }

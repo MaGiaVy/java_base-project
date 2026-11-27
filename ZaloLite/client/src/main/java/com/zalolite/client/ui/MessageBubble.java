@@ -235,29 +235,35 @@ public class MessageBubble extends JPanel {
         }
 
         if (mediaResolver != null) {
-            mediaResolver.accept(msg, file -> Theme.runAsync(
-                    () -> MediaViewer.loadThumbnail(file, 220, 180),
-                    icon -> {
-                        if (icon != null) {
-                            imgLbl.setText("");
-                            imgLbl.setIcon(icon);
-                            imgLbl.setToolTipText("Bấm để xem ảnh lớn");
-                            imgLbl.addMouseListener(new MouseAdapter() {
-                                @Override
-                                public void mouseClicked(MouseEvent e) {
-                                    if (SwingUtilities.isLeftMouseButton(e)) {
-                                        MediaViewer.showImageDialog(MessageBubble.this, file, msg.fileName);
+            mediaResolver.accept(msg, file -> {
+                if (file == null) {
+                    imgLbl.setText("🖼️ " + (msg.fileName == null ? "Hình ảnh" : msg.fileName) + " (chỉ lưu cục bộ P2P)");
+                    return;
+                }
+                Theme.runAsync(
+                        () -> MediaViewer.loadThumbnail(file, 220, 180),
+                        icon -> {
+                            if (icon != null) {
+                                imgLbl.setText("");
+                                imgLbl.setIcon(icon);
+                                imgLbl.setToolTipText("Bấm để xem ảnh lớn");
+                                imgLbl.addMouseListener(new MouseAdapter() {
+                                    @Override
+                                    public void mouseClicked(MouseEvent e) {
+                                        if (SwingUtilities.isLeftMouseButton(e)) {
+                                            MediaViewer.showImageDialog(MessageBubble.this, file, msg.fileName);
+                                        }
                                     }
-                                }
-                            });
-                        } else {
-                            imgLbl.setText("🖼️ " + (msg.fileName == null ? "Hình ảnh" : msg.fileName));
-                        }
-                        revalidate();
-                        repaint();
-                    },
-                    err -> imgLbl.setText("🖼️ Không tải được ảnh")
-            ));
+                                });
+                            } else {
+                                imgLbl.setText("🖼️ " + (msg.fileName == null ? "Hình ảnh" : msg.fileName));
+                            }
+                            revalidate();
+                            repaint();
+                        },
+                        err -> imgLbl.setText("🖼️ Không tải được ảnh")
+                );
+            });
         }
         return box;
     }
@@ -278,6 +284,10 @@ public class MessageBubble extends JPanel {
             act.setEnabled(false);
             mediaResolver.accept(msg, file -> {
                 act.setEnabled(true);
+                if (file == null) {
+                    JOptionPane.showMessageDialog(this, "Không tìm thấy hoặc không tải được tệp.");
+                    return;
+                }
                 onFile.accept(file);
             });
         });
@@ -307,6 +317,10 @@ public class MessageBubble extends JPanel {
             playBtn.setEnabled(false);
             mediaResolver.accept(msg, file -> {
                 playBtn.setEnabled(true);
+                if (file == null) {
+                    JOptionPane.showMessageDialog(this, "Không tìm thấy hoặc không tải được tin nhắn thoại.");
+                    return;
+                }
                 try {
                     playing[0] = true;
                     playBtn.setText("⏹ Dừng");
