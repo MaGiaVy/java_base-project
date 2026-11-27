@@ -80,12 +80,24 @@ public class LoginFrame extends JFrame {
             card.add(c);
             card.add(Box.createVerticalStrut(10));
         }
+        JButton forgotBtn = new JButton("Quên mật khẩu?");
+        forgotBtn.setFont(Theme.uiFont(12.5f));
+        forgotBtn.setBorderPainted(false);
+        forgotBtn.setContentAreaFilled(false);
+        forgotBtn.setForeground(Theme.TEXT_MUTED);
+        forgotBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        JPanel linksRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+        linksRow.setOpaque(false);
+        linksRow.add(registerBtn);
+        linksRow.add(forgotBtn);
+        linksRow.setAlignmentX(CENTER_ALIGNMENT);
+
         status.setAlignmentX(CENTER_ALIGNMENT);
-        registerBtn.setAlignmentX(CENTER_ALIGNMENT);
         card.add(status);
         card.add(Box.createVerticalStrut(4));
-        card.add(registerBtn);
-        card.setPreferredSize(new Dimension(340, 440));
+        card.add(linksRow);
+        card.setPreferredSize(new Dimension(340, 448));
 
         root.add(card);
         setContentPane(root);
@@ -94,6 +106,7 @@ public class LoginFrame extends JFrame {
         passField.addActionListener(e -> doLogin());
         lanBtn.addActionListener(e -> discoverLan());
         registerBtn.addActionListener(e -> new RegisterDialog(this, serverField.getText()).setVisible(true));
+        forgotBtn.addActionListener(e -> new ForgotPasswordDialog(this, serverField.getText()).setVisible(true));
     }
 
     private void discoverLan() {

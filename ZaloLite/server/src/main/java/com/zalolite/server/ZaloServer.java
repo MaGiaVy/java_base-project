@@ -3,6 +3,7 @@ package com.zalolite.server;
 import com.zalolite.server.dao.ConversationDao;
 import com.zalolite.server.dao.FriendDao;
 import com.zalolite.server.dao.MessageDao;
+import com.zalolite.server.dao.OtpDao;
 import com.zalolite.server.dao.UserDao;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -24,16 +25,24 @@ public class ZaloServer {
     private final FriendDao friends;
     private final ConversationDao convs;
     private final MessageDao messages;
+    private final OtpDao otps;
+    private final MailOtpService mailOtp;
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private volatile SSLServerSocket serverSocket;
 
     public ZaloServer(int port, SSLContext ssl, Db db) {
+        this(port, ssl, db, MailOtpService.consoleOnly());
+    }
+
+    public ZaloServer(int port, SSLContext ssl, Db db, MailOtpService mailOtp) {
         this.port = port;
         this.ssl = ssl;
         this.users = new UserDao(db);
         this.friends = new FriendDao(db);
         this.convs = new ConversationDao(db);
         this.messages = new MessageDao(db);
+        this.otps = new OtpDao(db);
+        this.mailOtp = mailOtp != null ? mailOtp : MailOtpService.consoleOnly();
     }
 
     public static SSLContext loadSsl(String keystorePath, String password) throws Exception {
@@ -60,7 +69,7 @@ public class ZaloServer {
                 if (serverSocket.isClosed()) break;
                 continue;
             }
-            pool.submit(new ClientHandler(s, sessions, users, friends, convs, messages));
+            pool.submit(new ClientHandler(s, sessions, users, friends, convs, messages, otps, mailOtp));
         }
     }
 
@@ -87,7 +96,7 @@ public class ZaloServer {
         fileServer.startAsync();
         DiscoveryResponder discovery = new DiscoveryResponder(discoveryPort, tcpPort, filePort);
         discovery.startAsync();
-        ZaloServer server = new ZaloServer(tcpPort, ssl, db);
+        ZaloServer server = new ZaloServer(tcpPort, ssl, db, new MailOtpService(cfg));
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try { server.stop(); } catch (Exception ignored) {}
             fileServer.stop();

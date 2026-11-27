@@ -73,4 +73,36 @@ class PacketTest {
         assertEquals(5, msgs.get(0).durationSec);
         assertEquals("❤️", msgs.get(0).reactions.get(2L));
     }
+
+    @Test
+    void wave5FieldsSurviveRoundTrip() throws Exception {
+        Conversation cloud = new Conversation();
+        cloud.id = 20;
+        cloud.isCloud = true;
+        cloud.name = "☁️ Cloud của tôi";
+        cloud.memberCount = 1;
+
+        Message reply = new Message();
+        reply.id = 101;
+        reply.replyTo = 100L;
+        reply.replySender = "Lan";
+        reply.replyPreview = "Hẹn gặp lúc 8h nha";
+        reply.forwarded = true;
+
+        Packet p = new Packet(PacketType.CALL_OFFER)
+                .put("conv", cloud)
+                .put("msg", reply);
+        Packet back = Packet.fromJson(p.toJson());
+
+        assertEquals(PacketType.CALL_OFFER, back.type);
+        Conversation c2 = back.get("conv", Conversation.class);
+        assertTrue(c2.isCloud);
+        assertEquals(1, c2.memberCount);
+
+        Message m2 = back.get("msg", Message.class);
+        assertEquals(100L, m2.replyTo);
+        assertEquals("Lan", m2.replySender);
+        assertEquals("Hẹn gặp lúc 8h nha", m2.replyPreview);
+        assertTrue(m2.forwarded);
+    }
 }

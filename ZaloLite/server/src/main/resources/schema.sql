@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS messages (
     file_size    BIGINT NOT NULL DEFAULT 0,
     duration_sec INT NOT NULL DEFAULT 0,
     reply_to     BIGINT REFERENCES messages(id) ON DELETE SET NULL,
+    forwarded    BOOLEAN NOT NULL DEFAULT false,
     recalled     BOOLEAN NOT NULL DEFAULT false,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -54,6 +55,7 @@ ALTER TABLE members  ADD COLUMN IF NOT EXISTS joined_at    TIMESTAMPTZ NOT NULL 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name    TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_size    BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS duration_sec INT NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS forwarded    BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conv_id, id);
 
 CREATE TABLE IF NOT EXISTS reactions (

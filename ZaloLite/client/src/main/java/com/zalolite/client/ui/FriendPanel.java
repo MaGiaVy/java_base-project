@@ -29,9 +29,11 @@ public class FriendPanel extends JPanel {
     private final JPanel searchSection = new JPanel();
     private final JPanel incomingSection = new JPanel();
     private final JPanel friendsSection = new JPanel();
+    private final JPanel blockedSection = new JPanel();
 
     private final List<User> friends = new ArrayList<>();
     private final List<User> incoming = new ArrayList<>();
+    private final List<User> blocked = new ArrayList<>();
     private final Set<Long> friendIds = new HashSet<>();
     private final Set<Long> outgoingIds = new HashSet<>();
 
@@ -76,10 +78,12 @@ public class FriendPanel extends JPanel {
         initSection(searchSection);
         initSection(incomingSection);
         initSection(friendsSection);
+        initSection(blockedSection);
 
         contentBox.add(searchSection);
         contentBox.add(incomingSection);
         contentBox.add(friendsSection);
+        contentBox.add(blockedSection);
 
         JScrollPane scroll = new JScrollPane(contentBox);
         scroll.setBorder(null);
@@ -121,6 +125,7 @@ public class FriendPanel extends JPanel {
                 },
                 null
         );
+        loadBlocked();
     }
 
     public void onPresence(long userId, boolean online) {
@@ -324,6 +329,23 @@ public class FriendPanel extends JPanel {
         JPopupMenu menu = new JPopupMenu();
         JMenuItem chat = new JMenuItem("Nhắn tin");
         chat.addActionListener(ev -> openDirectChat(u));
+        JMenuItem block = new JMenuItem("🚫 Chặn người dùng");
+        block.setFont(Theme.emojiFont(12.5f));
+        block.setForeground(Theme.PRIMARY_RED_DARK);
+        block.addActionListener(ev -> {
+            int ok = JOptionPane.showConfirmDialog(this,
+                    "Chặn " + u.name + "? Người này sẽ không thể nhắn tin hay gọi thoại cho bạn.",
+                    "Chặn người dùng", JOptionPane.YES_NO_OPTION);
+            if (ok != JOptionPane.YES_OPTION) return;
+            Theme.runAsync(
+                    () -> conn.request(new Packet(PacketType.USER_BLOCK).put("userId", u.id)),
+                    res -> {
+                        if (res.isOk()) refresh();
+                        else JOptionPane.showMessageDialog(this, res.str("error"));
+                    },
+                    err -> JOptionPane.showMessageDialog(this, err)
+            );
+        });
         JMenuItem remove = new JMenuItem("Huỷ kết bạn");
         remove.setForeground(Theme.PRIMARY_RED_DARK);
         remove.addActionListener(ev -> {
@@ -340,8 +362,50 @@ public class FriendPanel extends JPanel {
             );
         });
         menu.add(chat);
+        menu.add(block);
         menu.add(remove);
         menu.show(e.getComponent(), e.getX(), e.getY());
+    }
+
+    private void loadBlocked() {
+        Theme.runAsync(
+                () -> conn.request(new Packet(PacketType.BLOCK_LIST)),
+                res -> {
+                    if (!res.isOk()) return;
+                    blocked.clear();
+                    blocked.addAll(res.getList("blocked", User.class));
+                    renderBlocked();
+                },
+                null
+        );
+    }
+
+    private void renderBlocked() {
+        blockedSection.removeAll();
+        if (!blocked.isEmpty()) {
+            blockedSection.add(Box.createVerticalStrut(8));
+            blockedSection.add(sectionHeader("Đã chặn (" + blocked.size() + ")"));
+            for (User u : blocked) {
+                Theme.RoundedPanel row = new Theme.RoundedPanel(12, Color.WHITE, null, Theme.BORDER_PINK);
+                row.setLayout(new BorderLayout(8, 0));
+                row.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+                row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+                row.setAlignmentX(LEFT_ALIGNMENT);
+                row.add(userInfoPanel(u), BorderLayout.CENTER);
+                JButton unb = Theme.softButton("Bỏ chặn");
+                unb.setFont(Theme.uiFont(Font.BOLD, 11f));
+                unb.addActionListener(ev -> Theme.runAsync(
+                        () -> conn.request(new Packet(PacketType.USER_UNBLOCK).put("userId", u.id)),
+                        res -> { if (res.isOk()) refresh(); },
+                        null
+                ));
+                row.add(unb, BorderLayout.EAST);
+                blockedSection.add(row);
+                blockedSection.add(Box.createVerticalStrut(5));
+            }
+        }
+        blockedSection.revalidate();
+        blockedSection.repaint();
     }
 
     private void openDirectChat(User peer) {

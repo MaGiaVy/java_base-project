@@ -2,6 +2,7 @@ package com.zalolite.client.ui;
 
 import com.zalolite.client.Connection;
 import com.zalolite.client.P2pTransfer;
+import com.zalolite.client.VoiceCallSession;
 import com.zalolite.common.Conversation;
 import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
@@ -35,6 +36,10 @@ public class MainFrame extends JFrame {
     private final User me;
     private final Map<String, File> localMediaFiles = new ConcurrentHashMap<>();
     private P2pTransfer p2p;
+    private boolean soundEnabled = true;
+    private VoiceCallSession activeCallSession;
+    private VoiceCallDialog activeCallDialog;
+    private long activeCallPeerId;
 
     // Left rail
     private final RailButton chatNavBtn;
@@ -76,17 +81,36 @@ public class MainFrame extends JFrame {
         Theme.AvatarBadge myAvatar = new Theme.AvatarBadge(
                 me.name, 40, Theme.PRIMARY_RED, true, true);
         myAvatar.setAlignmentX(CENTER_ALIGNMENT);
-        myAvatar.setToolTipText(me.name + " (" + me.phone + ")");
+        myAvatar.setToolTipText(me.name + " (" + me.phone + ") — Bấm để sửa hồ sơ / đổi mật khẩu");
+        myAvatar.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        myAvatar.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                new ProfileDialog(MainFrame.this, conn, me, updated -> {
+                    me.name = updated.name;
+                    me.email = updated.email;
+                    setTitle("ZaloLite Berry - " + me.name);
+                    myAvatar.setNameAndColor(me.name, Theme.PRIMARY_RED, true, true);
+                    myAvatar.setToolTipText(me.name + " (" + me.phone + ") — Bấm để sửa hồ sơ / đổi mật khẩu");
+                }).setVisible(true);
+            }
+        });
 
         chatNavBtn = new RailButton("💬", "Tin nhắn");
         friendNavBtn = new RailButton("👥", "Bạn bè");
         RailButton newGroupBtn = new RailButton("✨", "Tạo nhóm mới");
+        RailButton soundBtn = new RailButton("🔔", "Bật/tắt âm báo tin nhắn mới");
         RailButton logoutBtn = new RailButton("⏻", "Đăng xuất");
 
         chatNavBtn.setSelected(true);
         chatNavBtn.addActionListener(e -> switchTab(TAB_CHATS));
         friendNavBtn.addActionListener(e -> switchTab(TAB_FRIENDS));
         newGroupBtn.addActionListener(e -> openGroupCreate());
+        soundBtn.addActionListener(e -> {
+            soundEnabled = !soundEnabled;
+            soundBtn.setText(soundEnabled ? "🔔" : "🔕");
+            showToast(soundEnabled ? "🔔 Đã bật chuông báo tin nhắn" : "🔕 Đã tắt chuông báo tin nhắn");
+        });
         logoutBtn.addActionListener(e -> doLogout());
 
         Theme.PillLabel tlsPill = new Theme.PillLabel("TLS", Theme.ONLINE_GREEN, Color.WHITE, 9.5f, false);
@@ -102,6 +126,8 @@ public class MainFrame extends JFrame {
         rail.add(Box.createVerticalStrut(8));
         rail.add(newGroupBtn);
         rail.add(Box.createVerticalGlue());
+        rail.add(soundBtn);
+        rail.add(Box.createVerticalStrut(8));
         rail.add(tlsPill);
         rail.add(Box.createVerticalStrut(10));
         rail.add(logoutBtn);
@@ -153,6 +179,7 @@ public class MainFrame extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosed(WindowEvent e) {
+                endActiveCall(false, null);
                 if (p2p != null) p2p.stop();
                 conn.close();
             }
@@ -461,6 +488,8 @@ public class MainFrame extends JFrame {
 
         Conversation finalTarget = target;
         activeChat = new ChatPanel(conn, me, finalTarget, localMediaFiles,
+                () -> new ArrayList<>(conversations),
+                () -> startOutgoingCall(finalTarget.peerId, finalTarget.name),
                 sent -> {
                     finalTarget.lastMessage = previewOf(sent);
                     finalTarget.lastTime = sent.createdAt;
@@ -491,6 +520,7 @@ public class MainFrame extends JFrame {
     }
 
     private void doLogout() {
+        endActiveCall(true, null);
         if (p2p != null) p2p.stop();
         Theme.runAsync(() -> {
             try {
@@ -559,15 +589,104 @@ public class MainFrame extends JFrame {
             }
             case PacketType.FRIEND_EVENT -> handleFriendEvent(p);
             case PacketType.CONV_UPDATE -> handleConvUpdate(p);
+            case PacketType.CALL_OFFER -> handleCallOffer(p);
+            case PacketType.CALL_ANSWER -> handleCallAnswer(p);
+            case PacketType.CALL_REJECT -> endActiveCall(false, "Đối phương đã từ chối cuộc gọi");
+            case PacketType.CALL_END -> endActiveCall(false, "Cuộc gọi đã kết thúc");
             default -> {
             }
         }
+    }
+
+    private void startOutgoingCall(long peerId, String peerName) {
+        if (peerId <= 0 || activeCallDialog != null) return;
+        try {
+            activeCallSession = new VoiceCallSession();
+            activeCallPeerId = peerId;
+            int udpPort = activeCallSession.getLocalPort();
+            activeCallDialog = VoiceCallDialog.outgoing(this, peerName, peerId, () -> endActiveCall(true, null));
+            activeCallDialog.setVisible(true);
+            Theme.runAsync(
+                    () -> conn.request(new Packet(PacketType.CALL_OFFER).put("targetId", peerId).put("udpPort", udpPort)),
+                    res -> {
+                        if (!res.isOk()) {
+                            endActiveCall(false, res.str("error"));
+                        }
+                    },
+                    err -> endActiveCall(false, err)
+            );
+        } catch (Exception ex) {
+            endActiveCall(false, "Không mở được cổng UDP: " + ex.getMessage());
+        }
+    }
+
+    private void handleCallOffer(Packet p) {
+        long callerId = p.num("callerId");
+        String callerName = p.str("callerName");
+        String callerIp = p.str("callerIp");
+        int callerUdpPort = (int) p.num("udpPort");
+        if (activeCallDialog != null) {
+            Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_REJECT)
+                    .put("callerId", callerId).put("reason", "Người dùng đang bận")), null, null);
+            return;
+        }
+        if (soundEnabled) Toolkit.getDefaultToolkit().beep();
+        activeCallPeerId = callerId;
+        activeCallDialog = VoiceCallDialog.incoming(this, callerName, callerId,
+                () -> {
+                    try {
+                        activeCallSession = new VoiceCallSession();
+                        int myPort = activeCallSession.getLocalPort();
+                        activeCallSession.startAudio(callerIp, callerUdpPort);
+                        if (activeCallDialog != null) activeCallDialog.setConnected(activeCallSession);
+                        Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_ANSWER)
+                                .put("callerId", callerId).put("udpPort", myPort)), null, null);
+                    } catch (Exception ex) {
+                        endActiveCall(true, "Lỗi âm thanh: " + ex.getMessage());
+                    }
+                },
+                () -> {
+                    Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_REJECT)
+                            .put("callerId", callerId).put("reason", "Từ chối")), null, null);
+                    endActiveCall(false, null);
+                });
+        activeCallDialog.setVisible(true);
+    }
+
+    private void handleCallAnswer(Packet p) {
+        if (activeCallSession == null || activeCallDialog == null) return;
+        String calleeIp = p.str("calleeIp");
+        int calleePort = (int) p.num("udpPort");
+        try {
+            activeCallSession.startAudio(calleeIp, calleePort);
+            activeCallDialog.setConnected(activeCallSession);
+        } catch (Exception ex) {
+            endActiveCall(true, "Lỗi kết nối âm thanh: " + ex.getMessage());
+        }
+    }
+
+    private void endActiveCall(boolean notifyPeer, String toastMsg) {
+        long peer = activeCallPeerId;
+        VoiceCallSession sess = activeCallSession;
+        VoiceCallDialog dlg = activeCallDialog;
+        activeCallPeerId = 0;
+        activeCallSession = null;
+        activeCallDialog = null;
+        if (notifyPeer && peer > 0) {
+            Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_END).put("peerId", peer)), null, null);
+        }
+        if (sess != null) sess.close();
+        if (dlg != null) dlg.endCall(toastMsg);
+        if (toastMsg != null && !toastMsg.isBlank()) showToast("📞 " + toastMsg);
     }
 
     private void handleMsgNew(Packet p) {
         Message m = p.get("message", Message.class);
         if (m == null) return;
         boolean isActive = activeChat != null && activeChat.getConvId() == m.convId;
+        if (soundEnabled && m.senderId != me.id && (!isActive || !isActive())) {
+            Toolkit.getDefaultToolkit().beep();
+        }
         if (isActive) {
             activeChat.onNewMessage(m);
         }

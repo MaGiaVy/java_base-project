@@ -7,9 +7,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class Conversation {
     public long id;
     public boolean isGroup;
+    public boolean isCloud;
     public String name;
     public long ownerId;
     public String avatar;
+    public int memberCount;
 
     // Dùng cho chat 1-1 để hiện chấm xanh và mở P2P
     public long peerId;

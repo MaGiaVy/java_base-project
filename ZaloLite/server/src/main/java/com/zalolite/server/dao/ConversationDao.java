@@ -17,9 +17,12 @@ import java.util.List;
 import java.util.Set;
 
 public class ConversationDao {
+    public static final String CLOUD_NAME = "☁️ Cloud của tôi";
+
     private static final String CONV_SELECT =
             "SELECT c.id, c.is_group, c.name, COALESCE(c.owner_id, 0) AS owner_id, c.avatar, m.pinned, "
                     + "EXTRACT(EPOCH FROM c.created_at) * 1000 AS conv_time, "
+                    + "(SELECT COUNT(*) FROM members mc WHERE mc.conv_id = c.id) AS member_count, "
                     + "pu.id AS peer_id, pu.name AS peer_name, pu.avatar AS peer_avatar, "
                     + "lm.kind AS last_kind, lm.content AS last_content, lm.file_name AS last_file_name, "
                     + "lm.recalled AS last_recalled, lm.ts AS last_ts, "
@@ -148,7 +151,48 @@ public class ConversationDao {
         }
     }
 
+    public long ensureCloudConversation(long userId) throws SQLException {
+        String find = "SELECT c.id FROM conversations c "
+                + "JOIN members m ON m.conv_id = c.id AND m.user_id = ? "
+                + "WHERE c.is_group = false AND c.owner_id = ? AND c.name = ? LIMIT 1";
+        try (Connection c = db.open()) {
+            try (PreparedStatement ps = c.prepareStatement(find)) {
+                ps.setLong(1, userId);
+                ps.setLong(2, userId);
+                ps.setString(3, CLOUD_NAME);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) return rs.getLong(1);
+                }
+            }
+            c.setAutoCommit(false);
+            try {
+                long convId;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO conversations(is_group, name, owner_id) VALUES (false, ?, ?) RETURNING id")) {
+                    ps.setString(1, CLOUD_NAME);
+                    ps.setLong(2, userId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        rs.next();
+                        convId = rs.getLong(1);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO members(conv_id, user_id, role, pinned, joined_at) VALUES (?, ?, 'OWNER', true, clock_timestamp())")) {
+                    ps.setLong(1, convId);
+                    ps.setLong(2, userId);
+                    ps.executeUpdate();
+                }
+                c.commit();
+                return convId;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            }
+        }
+    }
+
     public List<Conversation> listForUser(long userId, SessionRegistry sessions) throws SQLException {
+        ensureCloudConversation(userId);
         String sql = CONV_SELECT
                 + "WHERE m.user_id = ? ORDER BY m.pinned DESC, COALESCE(lm.ts, EXTRACT(EPOCH FROM c.created_at) * 1000) DESC";
         List<Conversation> list = new ArrayList<>();
@@ -333,10 +377,19 @@ public class ConversationDao {
         conv.ownerId = rs.getLong("owner_id");
         conv.pinned = rs.getBoolean("pinned");
         conv.unreadCount = rs.getInt("unread_count");
+        conv.memberCount = rs.getInt("member_count");
+
+        String convName = rs.getString("name");
+        conv.isCloud = !conv.isGroup && (CLOUD_NAME.equals(convName) || conv.memberCount == 1);
 
         if (conv.isGroup) {
-            conv.name = rs.getString("name");
+            conv.name = convName;
             conv.avatar = rs.getString("avatar");
+        } else if (conv.isCloud) {
+            conv.name = convName != null ? convName : CLOUD_NAME;
+            conv.avatar = rs.getString("avatar");
+            conv.peerId = 0;
+            conv.peerOnline = false;
         } else {
             conv.peerId = rs.getLong("peer_id");
             conv.name = rs.getString("peer_name");

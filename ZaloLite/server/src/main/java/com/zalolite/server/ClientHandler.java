@@ -8,6 +8,7 @@ import com.zalolite.common.User;
 import com.zalolite.server.dao.ConversationDao;
 import com.zalolite.server.dao.FriendDao;
 import com.zalolite.server.dao.MessageDao;
+import com.zalolite.server.dao.OtpDao;
 import com.zalolite.server.dao.UserDao;
 
 import java.io.BufferedReader;
@@ -17,6 +18,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +29,7 @@ public class ClientHandler implements Runnable {
     private static final int MAX_LINE = 64 * 1024;
     private static final Pattern PHONE = Pattern.compile("0\\d{9,10}");
     private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    private static final SecureRandom RANDOM = new SecureRandom();
     private static final Set<String> CLIENT_MSG_KINDS = Set.of(
             Message.KIND_TEXT, Message.KIND_IMAGE, Message.KIND_FILE, Message.KIND_VIDEO, Message.KIND_AUDIO);
 
@@ -36,17 +39,22 @@ public class ClientHandler implements Runnable {
     private final FriendDao friends;
     private final ConversationDao convs;
     private final MessageDao messages;
+    private final OtpDao otps;
+    private final MailOtpService mailOtp;
     private BufferedWriter out;
     private User me; // null khi chưa đăng nhập
 
     public ClientHandler(Socket socket, SessionRegistry sessions, UserDao users,
-                         FriendDao friends, ConversationDao convs, MessageDao messages) {
+                         FriendDao friends, ConversationDao convs, MessageDao messages,
+                         OtpDao otps, MailOtpService mailOtp) {
         this.socket = socket;
         this.sessions = sessions;
         this.users = users;
         this.friends = friends;
         this.convs = convs;
         this.messages = messages;
+        this.otps = otps;
+        this.mailOtp = mailOtp;
     }
 
     @Override
@@ -90,7 +98,11 @@ public class ClientHandler implements Runnable {
     }
 
     private void handle(Packet req) throws Exception {
-        if (me == null && !PacketType.LOGIN.equals(req.type) && !PacketType.REGISTER.equals(req.type)) {
+        if (me == null
+                && !PacketType.LOGIN.equals(req.type)
+                && !PacketType.REGISTER.equals(req.type)
+                && !PacketType.OTP_REQUEST.equals(req.type)
+                && !PacketType.OTP_RESET_PASSWORD.equals(req.type)) {
             send(Packet.error(req, "Chưa đăng nhập"));
             return;
         }
@@ -99,6 +111,9 @@ public class ClientHandler implements Runnable {
             case PacketType.LOGIN -> login(req);
             case PacketType.LOGOUT -> logout(req);
             case PacketType.PROFILE_UPDATE -> profileUpdate(req);
+            case PacketType.PASSWORD_CHANGE -> passwordChange(req);
+            case PacketType.OTP_REQUEST -> otpRequest(req);
+            case PacketType.OTP_RESET_PASSWORD -> otpResetPassword(req);
             case PacketType.P2P_REGISTER -> p2pRegister(req);
             case PacketType.P2P_LOOKUP -> p2pLookup(req);
             case PacketType.USER_SEARCH -> userSearch(req);
@@ -107,6 +122,13 @@ public class ClientHandler implements Runnable {
             case PacketType.FRIEND_ACCEPT -> friendAccept(req);
             case PacketType.FRIEND_REJECT -> friendReject(req);
             case PacketType.FRIEND_REMOVE -> friendRemove(req);
+            case PacketType.USER_BLOCK -> userBlock(req);
+            case PacketType.USER_UNBLOCK -> userUnblock(req);
+            case PacketType.BLOCK_LIST -> blockList(req);
+            case PacketType.CALL_OFFER -> callOffer(req);
+            case PacketType.CALL_ANSWER -> callAnswer(req);
+            case PacketType.CALL_REJECT -> callReject(req);
+            case PacketType.CALL_END -> callEnd(req);
             case PacketType.CONV_LIST -> convList(req);
             case PacketType.CONV_OPEN_DIRECT -> convOpenDirect(req);
             case PacketType.CONV_PIN -> convPin(req);
@@ -193,6 +215,67 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private void passwordChange(Packet req) throws Exception {
+        String oldPass = req.str("oldPassword");
+        String newPass = req.str("newPassword");
+        if (oldPass == null || oldPass.isEmpty()) {
+            send(Packet.error(req, "Mật khẩu cũ không được trống"));
+        } else if (newPass == null || newPass.length() < 6 || newPass.length() > 72) {
+            send(Packet.error(req, "Mật khẩu mới phải từ 6 đến 72 ký tự"));
+        } else if (!users.changePassword(me.id, oldPass, newPass)) {
+            send(Packet.error(req, "Mật khẩu cũ không đúng"));
+        } else {
+            send(Packet.ok(req));
+        }
+    }
+
+    private void otpRequest(Packet req) throws Exception {
+        String phone = trim(req.str("phone"));
+        User u = phone == null ? null : users.findByPhone(phone);
+        if (u == null) {
+            send(Packet.error(req, "Không tìm thấy tài khoản với số điện thoại này"));
+            return;
+        }
+        if (u.email == null || u.email.isBlank()) {
+            send(Packet.error(req, "Tài khoản chưa liên kết email để nhận OTP"));
+            return;
+        }
+        String code = String.format("%06d", RANDOM.nextInt(1_000_000));
+        otps.save(u.email, code, 5);
+        mailOtp.sendOtp(u.email, code);
+        send(Packet.ok(req)
+                .put("maskedEmail", maskEmail(u.email))
+                .put("consoleMode", mailOtp.isConsoleMode()));
+    }
+
+    private void otpResetPassword(Packet req) throws Exception {
+        String phone = trim(req.str("phone"));
+        String code = trim(req.str("code"));
+        String newPass = req.str("newPassword");
+        if (newPass == null || newPass.length() < 6 || newPass.length() > 72) {
+            send(Packet.error(req, "Mật khẩu mới phải từ 6 đến 72 ký tự"));
+            return;
+        }
+        if (code == null || code.isEmpty()) {
+            send(Packet.error(req, "Mã OTP không được trống"));
+            return;
+        }
+        User u = phone == null ? null : users.findByPhone(phone);
+        if (u == null || u.email == null || u.email.isBlank()) {
+            send(Packet.error(req, "Tài khoản không hợp lệ"));
+            return;
+        }
+        if (!otps.verifyAndConsume(u.email, code)) {
+            send(Packet.error(req, "Mã OTP không đúng hoặc đã hết hạn"));
+            return;
+        }
+        if (!users.resetPasswordByEmail(u.email, newPass)) {
+            send(Packet.error(req, "Không thể đặt lại mật khẩu"));
+            return;
+        }
+        send(Packet.ok(req));
+    }
+
     // --- P2P ---
 
     private void p2pRegister(Packet req) {
@@ -276,6 +359,89 @@ public class ClientHandler implements Runnable {
         }
         send(Packet.ok(req));
         sessions.sendTo(otherId, new Packet(PacketType.FRIEND_EVENT).put("action", "REMOVED").put("userId", me.id));
+    }
+
+    private void userBlock(Packet req) throws Exception {
+        long targetId = req.num("userId");
+        if (targetId <= 0 || targetId == me.id || users.findById(targetId) == null) {
+            send(Packet.error(req, "Người dùng không hợp lệ"));
+            return;
+        }
+        friends.block(me.id, targetId);
+        send(Packet.ok(req));
+    }
+
+    private void userUnblock(Packet req) throws Exception {
+        long targetId = req.num("userId");
+        if (!friends.unblock(me.id, targetId)) {
+            send(Packet.error(req, "Người dùng không nằm trong danh sách chặn"));
+            return;
+        }
+        send(Packet.ok(req));
+    }
+
+    private void blockList(Packet req) throws Exception {
+        send(Packet.ok(req).put("blocked", friends.listBlocked(me.id)));
+    }
+
+    // --- Báo hiệu gọi thoại 1-1 ---
+
+    private void callOffer(Packet req) throws Exception {
+        long targetId = req.num("targetId");
+        int udpPort = (int) req.num("udpPort");
+        if (targetId <= 0 || targetId == me.id) {
+            send(Packet.error(req, "Người nhận cuộc gọi không hợp lệ"));
+            return;
+        }
+        if (udpPort < 1 || udpPort > 65535) {
+            send(Packet.error(req, "Cổng UDP không hợp lệ"));
+            return;
+        }
+        if (friends.isBlockedEitherWay(me.id, targetId)) {
+            send(Packet.error(req, "Không thể gọi do một bên đã chặn"));
+            return;
+        }
+        if (!sessions.isOnline(targetId)) {
+            send(Packet.error(req, "Người dùng hiện không trực tuyến"));
+            return;
+        }
+        String callerIp = socket.getInetAddress().getHostAddress();
+        sessions.sendTo(targetId, new Packet(PacketType.CALL_OFFER)
+                .put("callerId", me.id)
+                .put("callerName", me.name)
+                .put("callerIp", callerIp)
+                .put("udpPort", udpPort));
+        send(Packet.ok(req));
+    }
+
+    private void callAnswer(Packet req) {
+        long callerId = req.num("callerId");
+        int udpPort = (int) req.num("udpPort");
+        if (callerId <= 0 || udpPort < 1 || udpPort > 65535) {
+            send(Packet.error(req, "Thông tin trả lời cuộc gọi không hợp lệ"));
+            return;
+        }
+        String calleeIp = socket.getInetAddress().getHostAddress();
+        sessions.sendTo(callerId, new Packet(PacketType.CALL_ANSWER)
+                .put("calleeId", me.id)
+                .put("calleeIp", calleeIp)
+                .put("udpPort", udpPort));
+        send(Packet.ok(req));
+    }
+
+    private void callReject(Packet req) {
+        long callerId = req.num("callerId");
+        String reason = req.str("reason");
+        sessions.sendTo(callerId, new Packet(PacketType.CALL_REJECT)
+                .put("calleeId", me.id)
+                .put("reason", reason == null ? "" : reason));
+        send(Packet.ok(req));
+    }
+
+    private void callEnd(Packet req) {
+        long peerId = req.num("peerId");
+        sessions.sendTo(peerId, new Packet(PacketType.CALL_END).put("userId", me.id));
+        send(Packet.ok(req));
     }
 
     // --- Hội thoại & nhóm ---
@@ -403,8 +569,13 @@ public class ClientHandler implements Runnable {
 
     private void msgSend(Packet req) throws Exception {
         long convId = req.num("convId");
-        if (!convs.isMember(convId, me.id)) {
+        Conversation conv = convs.findForUser(convId, me.id, sessions);
+        if (conv == null) {
             send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        if (!conv.isGroup && !conv.isCloud && conv.peerId > 0 && friends.isBlockedEitherWay(me.id, conv.peerId)) {
+            send(Packet.error(req, "Không thể nhắn tin do một bên đã chặn"));
             return;
         }
         String kind = trim(req.str("kind"));
@@ -431,6 +602,7 @@ public class ClientHandler implements Runnable {
         m.durationSec = (int) req.num("durationSec");
         long replyTo = req.num("replyTo");
         m.replyTo = replyTo > 0 ? replyTo : null;
+        m.forwarded = req.bool("forwarded");
         String transport = trim(req.str("transport"));
         m.transport = (transport == null || transport.isEmpty()) ? "SERVER" : transport;
 
@@ -561,6 +733,13 @@ public class ClientHandler implements Runnable {
 
     private static String trim(String s) {
         return s == null ? null : s.trim();
+    }
+
+    private static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 1) return "***" + (at >= 0 ? email.substring(at) : "");
+        int show = Math.min(2, at - 1);
+        return email.substring(0, show) + "***" + email.substring(at);
     }
 
     /** Ghi một gói tin; synchronized vì nhiều luồng (người khác nhắn tới) có thể cùng gửi cho client này. */

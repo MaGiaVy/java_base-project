@@ -10,11 +10,18 @@ import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
 import com.zalolite.common.User;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -24,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Khung chat chính: header, danh sách tin nhắn có phân trang & phân ngày, tìm kiếm, typing và composer. */
 public class ChatPanel extends JPanel {
@@ -33,6 +41,8 @@ public class ChatPanel extends JPanel {
     private final User me;
     private final Conversation conv;
     private final Map<String, File> localMediaFiles;
+    private final Supplier<List<Conversation>> conversationsSupplier;
+    private final Runnable onStartCall;
     private final AudioHelper audioHelper = new AudioHelper();
     private final Consumer<Message> onSentCallback;
     private final Runnable onGroupLeft;
@@ -71,9 +81,14 @@ public class ChatPanel extends JPanel {
     private final JButton sendBtn = Theme.primaryButton("Gửi");
     private final JButton voiceBtn;
     private final JProgressBar transferBar = new JProgressBar(0, 100);
+    private final JPanel replyBar = new JPanel(new BorderLayout(8, 0));
+    private final JLabel replyBarLabel = new JLabel();
+    private Message replyTarget;
 
     public ChatPanel(Connection conn, User me, Conversation conv,
                      Map<String, File> localMediaFiles,
+                     Supplier<List<Conversation>> conversationsSupplier,
+                     Runnable onStartCall,
                      Consumer<Message> onSentCallback,
                      Consumer<String> onGroupRenamed,
                      Runnable onGroupLeft) {
@@ -81,6 +96,8 @@ public class ChatPanel extends JPanel {
         this.me = me;
         this.conv = conv;
         this.localMediaFiles = localMediaFiles;
+        this.conversationsSupplier = conversationsSupplier;
+        this.onStartCall = onStartCall;
         this.onSentCallback = onSentCallback;
         this.onGroupRenamed = onGroupRenamed;
         this.onGroupLeft = onGroupLeft;
@@ -117,9 +134,17 @@ public class ChatPanel extends JPanel {
 
         JPanel headerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         headerActions.setOpaque(false);
-        Theme.PillLabel p2pPill = new Theme.PillLabel("⚡ P2P", Theme.BUBBLE_OTHER, Theme.PRIMARY_PURPLE, 11.5f, true);
-        p2pPill.setToolTipText("File/ảnh/thoại ưu tiên P2P trực tiếp, tự chuyển về Server nếu ngoại tuyến");
-        headerActions.add(p2pPill);
+        if (!conv.isCloud) {
+            Theme.PillLabel p2pPill = new Theme.PillLabel("⚡ P2P", Theme.BUBBLE_OTHER, Theme.PRIMARY_PURPLE, 11.5f, true);
+            p2pPill.setToolTipText("File/ảnh/thoại ưu tiên P2P trực tiếp, tự chuyển về Server nếu ngoại tuyến");
+            headerActions.add(p2pPill);
+        }
+
+        if (!conv.isGroup && !conv.isCloud && onStartCall != null) {
+            JButton callBtn = iconButton("📞", "Gọi thoại 1-1 realtime (UDP)");
+            callBtn.addActionListener(e -> onStartCall.run());
+            headerActions.add(callBtn);
+        }
 
         JButton searchToggle = iconButton("🔍", "Tìm kiếm trong cuộc trò chuyện");
         searchToggle.addActionListener(e -> toggleSearchBar());
@@ -204,7 +229,26 @@ public class ChatPanel extends JPanel {
         transferBar.setFont(Theme.uiFont(Font.BOLD, 11f));
         transferBar.setPreferredSize(new Dimension(0, 18));
         transferBar.setVisible(false);
-        topBottom.add(transferBar, BorderLayout.SOUTH);
+
+        replyBar.setBackground(Theme.BUBBLE_OTHER);
+        replyBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 3, 0, 0, Theme.PRIMARY_PURPLE),
+                BorderFactory.createEmptyBorder(4, 10, 4, 10)));
+        replyBarLabel.setFont(Theme.emojiFont(12f));
+        replyBarLabel.setForeground(Theme.TEXT_DARK);
+        JButton cancelReplyBtn = iconButton("✕", "Huỷ trả lời");
+        cancelReplyBtn.setPreferredSize(new Dimension(24, 24));
+        cancelReplyBtn.addActionListener(e -> clearReply());
+        replyBar.add(replyBarLabel, BorderLayout.CENTER);
+        replyBar.add(cancelReplyBtn, BorderLayout.EAST);
+        replyBar.setVisible(false);
+
+        JPanel barsStack = new JPanel();
+        barsStack.setOpaque(false);
+        barsStack.setLayout(new BoxLayout(barsStack, BoxLayout.Y_AXIS));
+        barsStack.add(transferBar);
+        barsStack.add(replyBar);
+        topBottom.add(barsStack, BorderLayout.SOUTH);
         bottom.add(topBottom, BorderLayout.NORTH);
 
         JPanel composer = new JPanel(new BorderLayout(8, 0));
@@ -263,6 +307,8 @@ public class ChatPanel extends JPanel {
             public void changedUpdate(DocumentEvent e) { onInputChanged(); }
         });
 
+        installDragAndDrop();
+        installClipboardImagePaste();
         loadInitialHistory();
     }
 
@@ -289,8 +335,11 @@ public class ChatPanel extends JPanel {
     }
 
     private void refreshSubtitle() {
-        if (conv.isGroup) {
-            subtitleLabel.setText("Nhóm chat Berry Pop");
+        if (conv.isCloud) {
+            subtitleLabel.setText("☁️ Lưu trữ tệp và ghi chú cá nhân");
+            subtitleLabel.setForeground(Theme.PRIMARY_PURPLE);
+        } else if (conv.isGroup) {
+            subtitleLabel.setText(conv.memberCount > 0 ? conv.memberCount + " thành viên" : "Nhóm chat Berry Pop");
             subtitleLabel.setForeground(Theme.TEXT_MUTED);
         } else if (conv.peerOnline) {
             subtitleLabel.setText("● Đang hoạt động");
@@ -481,7 +530,7 @@ public class ChatPanel extends JPanel {
                 prevDay = d;
             }
             MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
-                    this::resolveMediaFile, audioHelper);
+                    this::startReply, this::forwardMessage, this::resolveMediaFile, audioHelper);
             bubblesById.put(m.id, bubble);
             messagesBox.add(bubble);
         }
@@ -511,7 +560,7 @@ public class ChatPanel extends JPanel {
         }
         messages.add(m);
         MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
-                this::resolveMediaFile, audioHelper);
+                this::startReply, this::forwardMessage, this::resolveMediaFile, audioHelper);
         bubblesById.put(m.id, bubble);
         messagesBox.add(bubble);
         messagesBox.revalidate();
@@ -531,16 +580,22 @@ public class ChatPanel extends JPanel {
     private void sendMessage() {
         String text = inputField.getText().trim();
         if (text.isEmpty()) return;
+        Long replyId = replyTarget == null ? null : replyTarget.id;
+        clearReply();
         inputField.setText("");
         typingStopTimer.stop();
         sendTypingState(false);
         sendBtn.setEnabled(false);
 
         Theme.runAsync(
-                () -> conn.request(new Packet(PacketType.MSG_SEND)
-                        .put("convId", conv.id)
-                        .put("kind", Message.KIND_TEXT)
-                        .put("content", text)),
+                () -> {
+                    Packet req = new Packet(PacketType.MSG_SEND)
+                            .put("convId", conv.id)
+                            .put("kind", Message.KIND_TEXT)
+                            .put("content", text);
+                    if (replyId != null) req.put("replyTo", replyId);
+                    return conn.request(req);
+                },
                 res -> {
                     sendBtn.setEnabled(true);
                     if (!res.isOk()) {
@@ -659,8 +714,8 @@ public class ChatPanel extends JPanel {
             String transport = "SERVER";
             String filePath = null;
 
-            // 1. Ưu tiên P2P trực tiếp cho chat 1-1
-            if (!conv.isGroup && conv.peerId > 0) {
+            // 1. Ưu tiên P2P trực tiếp cho chat 1-1 (bỏ qua Cloud của tôi)
+            if (!conv.isGroup && !conv.isCloud && conv.peerId > 0) {
                 try {
                     Packet lk = conn.request(new Packet(PacketType.P2P_LOOKUP).put("userId", conv.peerId));
                     if (lk.isOk() && lk.bool("online")) {
@@ -746,6 +801,131 @@ public class ChatPanel extends JPanel {
                     JOptionPane.showMessageDialog(this, "Lỗi tải tệp: " + err);
                 }
         );
+    }
+
+    private void startReply(Message m) {
+        replyTarget = m;
+        String who = m.senderName != null ? m.senderName : "Tin nhắn";
+        String body = m.content != null ? m.content : (m.fileName != null ? m.fileName : "");
+        if (body.length() > 60) body = body.substring(0, 60) + "…";
+        replyBarLabel.setText("↩ Đang trả lời " + who + ": " + body);
+        replyBar.setVisible(true);
+        inputField.requestFocusInWindow();
+        revalidate();
+    }
+
+    private void clearReply() {
+        replyTarget = null;
+        replyBar.setVisible(false);
+        revalidate();
+    }
+
+    private void forwardMessage(Message m) {
+        if (conversationsSupplier == null) return;
+        List<Conversation> list = conversationsSupplier.get();
+        if (list == null || list.isEmpty()) return;
+        String[] names = list.stream().map(c -> c.name + (c.isGroup ? " (Nhóm)" : "")).toArray(String[]::new);
+        Object pick = JOptionPane.showInputDialog(this, "Chọn hội thoại để chuyển tiếp:",
+                "Chuyển tiếp tin nhắn", JOptionPane.PLAIN_MESSAGE, null, names, names[0]);
+        if (pick == null) return;
+        int idx = java.util.Arrays.asList(names).indexOf(pick);
+        if (idx < 0) return;
+        Conversation dest = list.get(idx);
+        Theme.runAsync(
+                () -> conn.request(new Packet(PacketType.MSG_SEND)
+                        .put("convId", dest.id)
+                        .put("kind", m.kind == null ? Message.KIND_TEXT : m.kind)
+                        .put("content", m.content)
+                        .put("filePath", m.filePath)
+                        .put("fileName", m.fileName)
+                        .put("fileSize", m.fileSize)
+                        .put("durationSec", m.durationSec)
+                        .put("transport", m.transport)
+                        .put("forwarded", true)),
+                res -> {
+                    if (!res.isOk()) {
+                        JOptionPane.showMessageDialog(this, res.str("error"));
+                    } else if (dest.id == conv.id) {
+                        Message sent = res.get("message", Message.class);
+                        if (sent != null) appendMessageToView(sent);
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Đã chuyển tiếp tới " + dest.name);
+                    }
+                },
+                err -> JOptionPane.showMessageDialog(this, err)
+        );
+    }
+
+    private void installDragAndDrop() {
+        TransferHandler handler = new TransferHandler() {
+            @Override
+            public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public boolean importData(TransferSupport support) {
+                if (!canImport(support)) return false;
+                try {
+                    List<File> files = (List<File>) support.getTransferable()
+                            .getTransferData(DataFlavor.javaFileListFlavor);
+                    for (File f : files) {
+                        if (f.isFile()) sendAutoTypedFile(f);
+                    }
+                    return true;
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+        };
+        setTransferHandler(handler);
+        messagesBox.setTransferHandler(handler);
+    }
+
+    private void sendAutoTypedFile(File f) {
+        String lower = f.getName().toLowerCase();
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif")) {
+            sendMediaFile(f, Message.KIND_IMAGE, 0);
+        } else if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv")
+                || lower.endsWith(".avi") || lower.endsWith(".webm")) {
+            sendMediaFile(f, Message.KIND_VIDEO, 0);
+        } else if (lower.endsWith(".wav")) {
+            int dur = 0;
+            try { dur = AudioHelper.wavDurationSec(f); } catch (Exception ignored) {}
+            sendMediaFile(f, Message.KIND_AUDIO, dur);
+        } else {
+            sendMediaFile(f, Message.KIND_FILE, 0);
+        }
+    }
+
+    private void installClipboardImagePaste() {
+        KeyStroke pasteKey = KeyStroke.getKeyStroke(KeyEvent.VK_V, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
+        Action defaultPaste = inputField.getActionMap().get("paste-from-clipboard");
+        inputField.getInputMap(JComponent.WHEN_FOCUSED).put(pasteKey, "zalolite-paste");
+        inputField.getActionMap().put("zalolite-paste", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    Clipboard cb = Toolkit.getDefaultToolkit().getSystemClipboard();
+                    Transferable tr = cb.getContents(null);
+                    if (tr != null && tr.isDataFlavorSupported(DataFlavor.imageFlavor)) {
+                        Image img = (Image) tr.getTransferData(DataFlavor.imageFlavor);
+                        BufferedImage bi = new BufferedImage(img.getWidth(null), img.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+                        Graphics2D g = bi.createGraphics();
+                        g.drawImage(img, 0, 0, null);
+                        g.dispose();
+                        File tmp = File.createTempFile("clipboard_", ".png");
+                        ImageIO.write(bi, "png", tmp);
+                        sendMediaFile(tmp, Message.KIND_IMAGE, 0);
+                        return;
+                    }
+                } catch (Exception ignored) {
+                }
+                if (defaultPaste != null) defaultPaste.actionPerformed(e);
+                else inputField.paste();
+            }
+        });
     }
 
     private void sendReact(Message m, String emoji) {

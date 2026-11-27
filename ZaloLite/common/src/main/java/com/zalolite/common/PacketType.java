@@ -16,12 +16,15 @@ public final class PacketType {
     public static final String LOGIN = "LOGIN";
     public static final String LOGOUT = "LOGOUT";
     public static final String PROFILE_UPDATE = "PROFILE_UPDATE";
+    public static final String PASSWORD_CHANGE = "PASSWORD_CHANGE";
+    public static final String OTP_REQUEST = "OTP_REQUEST";
+    public static final String OTP_RESET_PASSWORD = "OTP_RESET_PASSWORD";
 
     // P2P (client báo cổng lắng nghe, server trả ip:port của đối phương)
     public static final String P2P_REGISTER = "P2P_REGISTER";
     public static final String P2P_LOOKUP = "P2P_LOOKUP";
 
-    // Bạn bè
+    // Bạn bè & chặn
     public static final String USER_SEARCH = "USER_SEARCH";
     public static final String FRIEND_LIST = "FRIEND_LIST";
     public static final String FRIEND_REQUEST = "FRIEND_REQUEST";
@@ -29,6 +32,15 @@ public final class PacketType {
     public static final String FRIEND_REJECT = "FRIEND_REJECT";
     public static final String FRIEND_REMOVE = "FRIEND_REMOVE";
     public static final String FRIEND_EVENT = "FRIEND_EVENT"; // push
+    public static final String USER_BLOCK = "USER_BLOCK";
+    public static final String USER_UNBLOCK = "USER_UNBLOCK";
+    public static final String BLOCK_LIST = "BLOCK_LIST";
+
+    // Gọi thoại 1-1 realtime (báo hiệu qua TLS, âm thanh qua UDP)
+    public static final String CALL_OFFER = "CALL_OFFER";
+    public static final String CALL_ANSWER = "CALL_ANSWER";
+    public static final String CALL_REJECT = "CALL_REJECT";
+    public static final String CALL_END = "CALL_END";
 
     // Hội thoại & nhóm
     public static final String CONV_LIST = "CONV_LIST";

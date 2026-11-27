@@ -1,6 +1,7 @@
 package com.zalolite.client.ui;
 
 import com.zalolite.client.AudioHelper;
+import com.zalolite.client.LinkPreviewFetcher;
 import com.zalolite.common.Message;
 
 import javax.swing.*;
@@ -8,12 +9,13 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/** Một bong bóng tin nhắn (đi/đến/hệ thống) kèm media, reaction, trạng thái xem và menu chuột phải. */
+/** Một bong bóng tin nhắn (đi/đến/hệ thống) kèm media, reply, forward, link preview, reaction và menu chuột phải. */
 public class MessageBubble extends JPanel {
     private static final String[] QUICK_REACTIONS = {"❤️", "😆", "😮", "😢", "👍"};
     private static final int MAX_TEXT_WIDTH = 360;
@@ -23,6 +25,8 @@ public class MessageBubble extends JPanel {
     private final boolean isGroup;
     private final BiConsumer<Message, String> onReact;
     private final Consumer<Message> onRecall;
+    private final Consumer<Message> onReply;
+    private final Consumer<Message> onForward;
     private final BiConsumer<Message, Consumer<File>> mediaResolver;
     private final AudioHelper audioHelper;
 
@@ -32,12 +36,15 @@ public class MessageBubble extends JPanel {
 
     public MessageBubble(Message msg, long meId, boolean isGroup,
                          BiConsumer<Message, String> onReact, Consumer<Message> onRecall,
+                         Consumer<Message> onReply, Consumer<Message> onForward,
                          BiConsumer<Message, Consumer<File>> mediaResolver, AudioHelper audioHelper) {
         this.msg = msg;
         this.meId = meId;
         this.isGroup = isGroup;
         this.onReact = onReact;
         this.onRecall = onRecall;
+        this.onReply = onReply;
+        this.onForward = onForward;
         this.mediaResolver = mediaResolver;
         this.audioHelper = audioHelper;
 
@@ -139,8 +146,50 @@ public class MessageBubble extends JPanel {
             bubble.setLayout(new BorderLayout());
             bubble.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
 
+            JPanel inner = new JPanel();
+            inner.setOpaque(false);
+            inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
+
+            if (msg.forwarded) {
+                JLabel fwd = new JLabel("↪ Đã chuyển tiếp");
+                fwd.setFont(Theme.emojiFont(Font.ITALIC, 11f));
+                fwd.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+                fwd.setBorder(BorderFactory.createEmptyBorder(0, 0, 3, 0));
+                fwd.setAlignmentX(LEFT_ALIGNMENT);
+                inner.add(fwd);
+            }
+
+            if (msg.replyTo != null && (msg.replyPreview != null || msg.replySender != null)) {
+                JPanel quote = new JPanel(new GridLayout(0, 1));
+                quote.setBackground(mine ? new Color(0x9F1239) : new Color(0xE9D5FF));
+                quote.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 3, 0, 0, mine ? Color.WHITE : Theme.PRIMARY_PURPLE),
+                        BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+                quote.setAlignmentX(LEFT_ALIGNMENT);
+                JLabel qs = new JLabel(msg.replySender != null ? msg.replySender : "Trả lời");
+                qs.setFont(Theme.uiFont(Font.BOLD, 11f));
+                qs.setForeground(mine ? Color.WHITE : Theme.PRIMARY_PURPLE);
+                JLabel qp = new JLabel(msg.replyPreview != null ? msg.replyPreview : "");
+                qp.setFont(Theme.emojiFont(11.5f));
+                qp.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_DARK);
+                quote.add(qs);
+                quote.add(qp);
+                inner.add(quote);
+                inner.add(Box.createVerticalStrut(5));
+            }
+
             JComponent contentComp = buildContentComponent(mine);
-            bubble.add(contentComp, BorderLayout.CENTER);
+            contentComp.setAlignmentX(LEFT_ALIGNMENT);
+            inner.add(contentComp);
+
+            if ((msg.kind == null || Message.KIND_TEXT.equals(msg.kind)) && msg.content != null) {
+                String url = LinkPreviewFetcher.extractFirstUrl(msg.content);
+                if (url != null) {
+                    attachLinkPreviewAsync(inner, url, mine);
+                }
+            }
+
+            bubble.add(inner, BorderLayout.CENTER);
             attachContextMenu(bubble);
             attachContextMenu(contentComp);
         }
@@ -301,6 +350,45 @@ public class MessageBubble extends JPanel {
         return area;
     }
 
+    private void attachLinkPreviewAsync(JPanel container, String url, boolean mine) {
+        Theme.runAsync(
+                () -> LinkPreviewFetcher.fetch(url),
+                preview -> {
+                    if (preview == null) return;
+                    Theme.RoundedPanel card = new Theme.RoundedPanel(10,
+                            mine ? new Color(0x9F1239) : Color.WHITE, null,
+                            mine ? new Color(0xFDA4AF) : Theme.BORDER_PINK);
+                    card.setLayout(new GridLayout(0, 1, 0, 2));
+                    card.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+                    card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    card.setAlignmentX(LEFT_ALIGNMENT);
+                    JLabel t = new JLabel("🔗 " + preview.title());
+                    t.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+                    t.setForeground(mine ? Color.WHITE : Theme.TEXT_DARK);
+                    JLabel h = new JLabel(preview.host());
+                    h.setFont(Theme.uiFont(10.5f));
+                    h.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+                    card.add(t);
+                    card.add(h);
+                    card.addMouseListener(new MouseAdapter() {
+                        @Override
+                        public void mouseClicked(MouseEvent e) {
+                            if (SwingUtilities.isLeftMouseButton(e)) {
+                                try {
+                                    Desktop.getDesktop().browse(URI.create(preview.url()));
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    });
+                    container.add(Box.createVerticalStrut(6));
+                    container.add(card);
+                    revalidate();
+                    repaint();
+                },
+                null
+        );
+    }
+
     private String formatAttachmentMeta() {
         StringBuilder sb = new StringBuilder();
         if (msg.fileName != null && !msg.fileName.isBlank()) {
@@ -354,6 +442,21 @@ public class MessageBubble extends JPanel {
             reactRow.add(b);
         }
         menu.add(reactRow);
+        menu.addSeparator();
+
+        JMenuItem replyItem = new JMenuItem("↩ Trả lời");
+        replyItem.setFont(Theme.emojiFont(12.5f));
+        replyItem.addActionListener(ev -> {
+            if (onReply != null) onReply.accept(msg);
+        });
+        menu.add(replyItem);
+
+        JMenuItem fwdItem = new JMenuItem("➡ Chuyển tiếp");
+        fwdItem.setFont(Theme.emojiFont(12.5f));
+        fwdItem.addActionListener(ev -> {
+            if (onForward != null) onForward.accept(msg);
+        });
+        menu.add(fwdItem);
 
         if (msg.senderId == meId) {
             menu.addSeparator();

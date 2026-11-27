@@ -75,6 +75,66 @@ public class FriendDao {
         }
     }
 
+    public boolean block(long blockerId, long targetId) throws SQLException {
+        if (blockerId == targetId) return false;
+        String del = "DELETE FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)";
+        String ins = "INSERT INTO friendships(user_id, friend_id, status) VALUES (?, ?, 'BLOCKED')";
+        try (Connection c = db.open()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = c.prepareStatement(del)) {
+                    ps.setLong(1, blockerId);
+                    ps.setLong(2, targetId);
+                    ps.setLong(3, targetId);
+                    ps.setLong(4, blockerId);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement(ins)) {
+                    ps.setLong(1, blockerId);
+                    ps.setLong(2, targetId);
+                    ps.executeUpdate();
+                }
+                c.commit();
+                return true;
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            }
+        }
+    }
+
+    public boolean unblock(long blockerId, long targetId) throws SQLException {
+        String sql = "DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'BLOCKED'";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, blockerId);
+            ps.setLong(2, targetId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    public boolean isBlockedEitherWay(long u1, long u2) throws SQLException {
+        String sql = "SELECT 1 FROM friendships "
+                + "WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = 'BLOCKED' LIMIT 1";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, u1);
+            ps.setLong(2, u2);
+            ps.setLong(3, u2);
+            ps.setLong(4, u1);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    public List<User> listBlocked(long userId) throws SQLException {
+        String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
+                + "JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? AND f.status = 'BLOCKED' ORDER BY f.created_at DESC";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            return readUsers(ps);
+        }
+    }
+
     public List<User> listFriends(long userId) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
                 + "JOIN users u ON u.id = CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END "

@@ -95,6 +95,36 @@ public class UserDao {
         }
     }
 
+    public boolean changePassword(long userId, String oldPassword, String newPassword) throws SQLException {
+        if (oldPassword == null || newPassword == null) return false;
+        try (Connection c = db.open()) {
+            String hash;
+            try (PreparedStatement ps = c.prepareStatement("SELECT pass_hash FROM users WHERE id = ?")) {
+                ps.setLong(1, userId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return false;
+                    hash = rs.getString(1);
+                }
+            }
+            if (!BCrypt.checkpw(oldPassword, hash)) return false;
+            try (PreparedStatement ps = c.prepareStatement("UPDATE users SET pass_hash = ? WHERE id = ?")) {
+                ps.setString(1, BCrypt.hashpw(newPassword, BCrypt.gensalt()));
+                ps.setLong(2, userId);
+                return ps.executeUpdate() > 0;
+            }
+        }
+    }
+
+    public boolean resetPasswordByEmail(String email, String newPassword) throws SQLException {
+        if (email == null || email.isBlank() || newPassword == null) return false;
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement("UPDATE users SET pass_hash = ? WHERE email = ?")) {
+            ps.setString(1, BCrypt.hashpw(newPassword, BCrypt.gensalt()));
+            ps.setString(2, email);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
     static User map(ResultSet rs) throws SQLException {
         return new User(rs.getLong("id"), rs.getString("phone"), rs.getString("name"),
                 rs.getString("email"), rs.getString("avatar"));

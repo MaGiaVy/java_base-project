@@ -33,6 +33,9 @@ public class Message {
     public int durationSec;
 
     public Long replyTo;
+    public String replySender;
+    public String replyPreview;
+    public boolean forwarded;
     public boolean recalled;
     public long createdAt; // epoch millis
 

@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Tự bỏ qua nếu chưa có server.properties hoặc không kết nối được PostgreSQL.
  */
 class ServerIntegrationTest {
+    static Db db;
     static ZaloServer server;
     static SSLContext clientSsl;
 
@@ -42,14 +43,14 @@ class ServerIntegrationTest {
             return;
         }
         String url = cfg.get("db.url", "jdbc:postgresql://localhost:5432/zalolite").replaceAll("/[^/?]+(\\?.*)?$", "/zalolite_test");
-        Db db = new Db(url, cfg.get("db.user", "postgres"), cfg.get("db.password", ""));
+        db = new Db(url, cfg.get("db.user", "postgres"), cfg.get("db.password", ""));
         try {
             db.init();
         } catch (Exception e) {
             assumeTrue(false, "không kết nối được PostgreSQL: " + e.getMessage());
         }
         try (Connection c = db.open(); Statement st = c.createStatement()) {
-            st.execute("TRUNCATE users, conversations RESTART IDENTITY CASCADE");
+            st.execute("TRUNCATE users, conversations, otp RESTART IDENTITY CASCADE");
         }
 
         server = new ZaloServer(0, ZaloServer.loadSsl("certs/server.p12", "zalolite-lab"), db);
@@ -355,6 +356,244 @@ class ServerIntegrationTest {
                     "Thành viên mới không được thấy tin trước khi vào nhóm");
             assertTrue(msgs.stream().anyMatch(m -> "Chào mừng thành viên mới".equals(m.content)),
                     "Thành viên mới phải thấy tin sau khi vào nhóm");
+        }
+    }
+
+    @Test
+    void profileUpdateAndChangePasswordFlow() throws Exception {
+        try (TestClient c = new TestClient()) {
+            c.registerAndLogin("0915000001", "Old Name");
+
+            Packet prof = c.call(new Packet(PacketType.PROFILE_UPDATE)
+                    .put("name", "New Name").put("email", "newname@test.local"));
+            assertTrue(prof.isOk());
+            User u = prof.get("user", User.class);
+            assertEquals("New Name", u.name);
+            assertEquals("newname@test.local", u.email);
+
+            // Sai mật khẩu cũ -> lỗi
+            assertFalse(c.call(new Packet(PacketType.PASSWORD_CHANGE)
+                    .put("oldPassword", "wrongpass").put("newPassword", "matkhau2")).isOk());
+            // Mật khẩu mới quá ngắn -> lỗi
+            assertFalse(c.call(new Packet(PacketType.PASSWORD_CHANGE)
+                    .put("oldPassword", "matkhau1").put("newPassword", "123")).isOk());
+            // Đổi thành công
+            assertTrue(c.call(new Packet(PacketType.PASSWORD_CHANGE)
+                    .put("oldPassword", "matkhau1").put("newPassword", "matkhau2")).isOk());
+
+            assertTrue(c.call(new Packet(PacketType.LOGOUT)).isOk());
+            assertFalse(c.call(new Packet(PacketType.LOGIN).put("phone", "0915000001").put("password", "matkhau1")).isOk());
+            assertTrue(c.call(new Packet(PacketType.LOGIN).put("phone", "0915000001").put("password", "matkhau2")).isOk());
+        }
+    }
+
+    @Test
+    void otpResetPasswordFlow() throws Exception {
+        try (TestClient c = new TestClient()) {
+            assertTrue(c.call(new Packet(PacketType.REGISTER)
+                    .put("phone", "0916000001").put("name", "OTP User")
+                    .put("email", "otpuser@test.local").put("password", "matkhau1")).isOk());
+
+            // OTP_REQUEST không cần đăng nhập và không lộ mã thô
+            Packet reqRes = c.call(new Packet(PacketType.OTP_REQUEST).put("phone", "0916000001"));
+            assertTrue(reqRes.isOk());
+            assertEquals("ot***@test.local", reqRes.str("maskedEmail"));
+            assertTrue(reqRes.bool("consoleMode"));
+            assertFalse(reqRes.data.has("code"), "Không bao giờ trả mã OTP thô");
+
+            String savedCode;
+            try (Connection conn = db.open();
+                 var ps = conn.prepareStatement("SELECT code FROM otp WHERE email = ?")) {
+                ps.setString(1, "otpuser@test.local");
+                try (var rs = ps.executeQuery()) {
+                    assertTrue(rs.next());
+                    savedCode = rs.getString(1);
+                }
+            }
+            assertEquals(6, savedCode.length());
+
+            // Sai mã OTP -> lỗi
+            assertFalse(c.call(new Packet(PacketType.OTP_RESET_PASSWORD)
+                    .put("phone", "0916000001").put("code", "000000").put("newPassword", "matkhauMoi")).isOk());
+
+            // Đúng mã OTP -> thành công
+            assertTrue(c.call(new Packet(PacketType.OTP_RESET_PASSWORD)
+                    .put("phone", "0916000001").put("code", savedCode).put("newPassword", "matkhauMoi")).isOk());
+
+            // Dùng lại mã cũ -> lỗi (single-use)
+            assertFalse(c.call(new Packet(PacketType.OTP_RESET_PASSWORD)
+                    .put("phone", "0916000001").put("code", savedCode).put("newPassword", "matkhauKhac")).isOk());
+
+            // Kiểm tra đăng nhập với mật khẩu mới
+            assertTrue(c.call(new Packet(PacketType.LOGIN)
+                    .put("phone", "0916000001").put("password", "matkhauMoi")).isOk());
+            assertTrue(c.call(new Packet(PacketType.LOGOUT)).isOk());
+
+            // Mã hết hạn -> lỗi
+            assertTrue(c.call(new Packet(PacketType.OTP_REQUEST).put("phone", "0916000001")).isOk());
+            String expiredCode;
+            try (Connection conn = db.open()) {
+                try (var ps = conn.prepareStatement("UPDATE otp SET expires_at = now() - interval '1 minute' WHERE email = ? RETURNING code")) {
+                    ps.setString(1, "otpuser@test.local");
+                    try (var rs = ps.executeQuery()) {
+                        assertTrue(rs.next());
+                        expiredCode = rs.getString(1);
+                    }
+                }
+            }
+            assertFalse(c.call(new Packet(PacketType.OTP_RESET_PASSWORD)
+                    .put("phone", "0916000001").put("code", expiredCode).put("newPassword", "matkhauHetHan")).isOk());
+        }
+    }
+
+    @Test
+    void blockAndUnblockFlow() throws Exception {
+        try (TestClient a = new TestClient(); TestClient b = new TestClient()) {
+            User uA = a.registerAndLogin("0917000001", "Blocker");
+            User uB = b.registerAndLogin("0917000002", "Target");
+
+            Conversation conv = a.call(new Packet(PacketType.CONV_OPEN_DIRECT).put("peerId", uB.id))
+                    .get("conversation", Conversation.class);
+
+            // Chặn B -> xuất hiện trong BLOCK_LIST
+            assertTrue(a.call(new Packet(PacketType.USER_BLOCK).put("userId", uB.id)).isOk());
+            List<User> blocked = a.call(new Packet(PacketType.BLOCK_LIST)).getList("blocked", User.class);
+            assertEquals(1, blocked.size());
+            assertEquals(uB.id, blocked.get(0).id);
+
+            // Cả hai bên không thể nhắn 1-1 hay gọi thoại
+            Packet sendA = a.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", conv.id).put("kind", Message.KIND_TEXT).put("content", "Hi"));
+            assertFalse(sendA.isOk());
+            assertEquals("Không thể nhắn tin do một bên đã chặn", sendA.str("error"));
+
+            Packet sendB = b.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", conv.id).put("kind", Message.KIND_TEXT).put("content", "Hi back"));
+            assertFalse(sendB.isOk());
+
+            assertFalse(b.call(new Packet(PacketType.CALL_OFFER).put("targetId", uA.id).put("udpPort", 50000)).isOk());
+
+            // Vẫn mở xem lại lịch sử bình thường
+            assertTrue(a.call(new Packet(PacketType.CONV_OPEN_DIRECT).put("peerId", uB.id)).isOk());
+
+            // Bỏ chặn -> nhắn tin lại bình thường
+            assertTrue(a.call(new Packet(PacketType.USER_UNBLOCK).put("userId", uB.id)).isOk());
+            assertTrue(a.call(new Packet(PacketType.BLOCK_LIST)).getList("blocked", User.class).isEmpty());
+            assertTrue(a.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", conv.id).put("kind", Message.KIND_TEXT).put("content", "Đã bỏ chặn")).isOk());
+            assertEquals("Đã bỏ chặn", b.nextPush(PacketType.MSG_NEW).get("message", Message.class).content);
+        }
+    }
+
+    @Test
+    void cloudConversationIsIdempotentAndAcceptsMessages() throws Exception {
+        try (TestClient c = new TestClient()) {
+            c.registerAndLogin("0918000001", "Cloud User");
+
+            List<Conversation> list1 = c.call(new Packet(PacketType.CONV_LIST)).getList("conversations", Conversation.class);
+            List<Conversation> clouds1 = list1.stream().filter(cv -> cv.isCloud).toList();
+            assertEquals(1, clouds1.size());
+            Conversation cloud = clouds1.get(0);
+            assertTrue(cloud.pinned);
+            assertEquals(1, cloud.memberCount);
+            assertEquals("☁️ Cloud của tôi", cloud.name);
+
+            // Gọi CONV_LIST lần nữa không tạo trùng
+            List<Conversation> list2 = c.call(new Packet(PacketType.CONV_LIST)).getList("conversations", Conversation.class);
+            List<Conversation> clouds2 = list2.stream().filter(cv -> cv.isCloud).toList();
+            assertEquals(1, clouds2.size());
+            assertEquals(cloud.id, clouds2.get(0).id);
+
+            // Nhắn tin vào Cloud của tôi
+            Packet sent = c.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", cloud.id).put("kind", Message.KIND_TEXT).put("content", "Ghi chú cá nhân"));
+            assertTrue(sent.isOk());
+            List<Message> hist = c.call(new Packet(PacketType.MSG_HISTORY).put("convId", cloud.id).put("limit", 10))
+                    .getList("messages", Message.class);
+            assertEquals(1, hist.size());
+            assertEquals("Ghi chú cá nhân", hist.get(0).content);
+        }
+    }
+
+    @Test
+    void replyPreviewForwardAndGroupMemberCount() throws Exception {
+        try (TestClient owner = new TestClient(); TestClient m1 = new TestClient(); TestClient m2 = new TestClient()) {
+            owner.registerAndLogin("0919000001", "Owner");
+            User u1 = m1.registerAndLogin("0919000002", "Mem1");
+            User u2 = m2.registerAndLogin("0919000003", "Mem2");
+
+            Conversation g = owner.call(new Packet(PacketType.GROUP_CREATE)
+                    .put("name", "Nhóm Test").put("memberIds", List.of(u1.id, u2.id)))
+                    .get("conversation", Conversation.class);
+            assertEquals(3, g.memberCount);
+
+            Message orig = owner.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", g.id).put("kind", Message.KIND_TEXT).put("content", "Tin nhắn gốc để trả lời"))
+                    .get("message", Message.class);
+
+            Message reply = m1.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", g.id).put("kind", Message.KIND_TEXT)
+                    .put("content", "Trả lời nè").put("replyTo", orig.id).put("forwarded", true))
+                    .get("message", Message.class);
+            assertEquals(orig.id, reply.replyTo);
+            assertEquals("Owner", reply.replySender);
+            assertEquals("Tin nhắn gốc để trả lời", reply.replyPreview);
+            assertTrue(reply.forwarded);
+
+            // Kiểm tra history giữ nguyên replyPreview & forwarded
+            List<Message> hist = owner.call(new Packet(PacketType.MSG_HISTORY).put("convId", g.id).put("limit", 10))
+                    .getList("messages", Message.class);
+            Message found = hist.stream().filter(x -> x.id == reply.id).findFirst().orElseThrow();
+            assertEquals("Owner", found.replySender);
+            assertEquals("Tin nhắn gốc để trả lời", found.replyPreview);
+            assertTrue(found.forwarded);
+
+            // Thu hồi tin nhắn gốc -> replyPreview trong history đổi thành "Tin nhắn đã được thu hồi"
+            assertTrue(owner.call(new Packet(PacketType.MSG_RECALL).put("msgId", orig.id)).isOk());
+            List<Message> histAfter = owner.call(new Packet(PacketType.MSG_HISTORY).put("convId", g.id).put("limit", 10))
+                    .getList("messages", Message.class);
+            Message foundAfter = histAfter.stream().filter(x -> x.id == reply.id).findFirst().orElseThrow();
+            assertEquals("Tin nhắn đã được thu hồi", foundAfter.replyPreview);
+        }
+    }
+
+    @Test
+    void voiceCallSignalingFlow() throws Exception {
+        try (TestClient caller = new TestClient(); TestClient callee = new TestClient()) {
+            User uCaller = caller.registerAndLogin("0920000001", "Caller");
+            User uCallee = callee.registerAndLogin("0920000002", "Callee");
+
+            // OFFER
+            assertTrue(caller.call(new Packet(PacketType.CALL_OFFER)
+                    .put("targetId", uCallee.id).put("udpPort", 40001)).isOk());
+            Packet offerPush = callee.nextPush(PacketType.CALL_OFFER);
+            assertEquals(uCaller.id, offerPush.num("callerId"));
+            assertEquals("Caller", offerPush.str("callerName"));
+            assertNotNull(offerPush.str("callerIp"));
+            assertEquals(40001, offerPush.num("udpPort"));
+
+            // ANSWER
+            assertTrue(callee.call(new Packet(PacketType.CALL_ANSWER)
+                    .put("callerId", uCaller.id).put("udpPort", 40002)).isOk());
+            Packet ansPush = caller.nextPush(PacketType.CALL_ANSWER);
+            assertEquals(uCallee.id, ansPush.num("calleeId"));
+            assertNotNull(ansPush.str("calleeIp"));
+            assertEquals(40002, ansPush.num("udpPort"));
+
+            // END
+            assertTrue(caller.call(new Packet(PacketType.CALL_END).put("peerId", uCallee.id)).isOk());
+            Packet endPush = callee.nextPush(PacketType.CALL_END);
+            assertEquals(uCaller.id, endPush.num("userId"));
+
+            // REJECT
+            assertTrue(caller.call(new Packet(PacketType.CALL_OFFER)
+                    .put("targetId", uCallee.id).put("udpPort", 40003)).isOk());
+            callee.nextPush(PacketType.CALL_OFFER);
+            assertTrue(callee.call(new Packet(PacketType.CALL_REJECT)
+                    .put("callerId", uCaller.id).put("reason", "BUSY")).isOk());
+            Packet rejPush = caller.nextPush(PacketType.CALL_REJECT);
+            assertEquals(uCallee.id, rejPush.num("calleeId"));
+            assertEquals("BUSY", rejPush.str("reason"));
         }
     }
 }
