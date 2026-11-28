@@ -17,7 +17,13 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
-/** Tab Bạn bè ở cột giữa: tìm kiếm người dùng, lời mời kết bạn, danh sách bạn bè. */
+/**
+ * Tab "Bạn bè" ở cột giữa của {@link MainFrame}:
+ *  - Tìm kiếm người dùng theo SĐT/tên ({@code USER_SEARCH}) và gửi lời mời kết bạn ({@code FRIEND_REQUEST}).
+ *  - Chấp nhận / từ chối lời mời kết bạn đến ({@code FRIEND_ACCEPT}, {@code FRIEND_REJECT}).
+ *  - Xem danh sách bạn bè kèm trạng thái online/offline real-time, mở chat 1-1 ({@code CONV_OPEN_DIRECT}),
+ *    hủy kết bạn ({@code FRIEND_REMOVE}), chặn / bỏ chặn ({@code USER_BLOCK}, {@code USER_UNBLOCK}).
+ */
 public class FriendPanel extends JPanel {
     private final Connection conn;
     private final User me;
@@ -91,6 +97,7 @@ public class FriendPanel extends JPanel {
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         add(scroll, BorderLayout.CENTER);
 
+        // [UI -> GỬI] Bấm nút "Tìm" hoặc nhấn Enter ở ô tìm kiếm -> gửi gói USER_SEARCH
         searchBtn.addActionListener(e -> doSearch());
         searchField.addActionListener(e -> doSearch());
     }
@@ -101,8 +108,10 @@ public class FriendPanel extends JPanel {
         p.setAlignmentX(LEFT_ALIGNMENT);
     }
 
+    /** [UI -> GỬI] Tải lại danh sách bạn bè, lời mời đến/đi (FRIEND_LIST) và danh sách đã chặn (BLOCK_LIST). */
     public void refresh() {
         Theme.runAsync(
+                // [GỬI] Yêu cầu FRIEND_LIST qua kênh TLS (:9000)
                 () -> conn.request(new Packet(PacketType.FRIEND_LIST)),
                 res -> {
                     if (!res.isOk()) return;
@@ -128,6 +137,7 @@ public class FriendPanel extends JPanel {
         loadBlocked();
     }
 
+    /** [PUSH -> UI] Cập nhật chấm xanh online/offline của bạn bè khi nhận sự kiện PRESENCE từ server. */
     public void onPresence(long userId, boolean online) {
         boolean changed = false;
         for (User u : friends) {
@@ -139,6 +149,7 @@ public class FriendPanel extends JPanel {
         if (changed) renderFriends();
     }
 
+    /** [UI -> GỬI] Gửi gói USER_SEARCH tìm người dùng theo SĐT hoặc tên qua TLS (:9000). */
     private void doSearch() {
         String q = searchField.getText().trim();
         if (q.isEmpty()) {
@@ -148,6 +159,7 @@ public class FriendPanel extends JPanel {
             return;
         }
         Theme.runAsync(
+                // [GỬI] Gửi từ khóa tìm kiếm lên server
                 () -> conn.request(new Packet(PacketType.USER_SEARCH).put("query", q)),
                 res -> {
                     searchSection.removeAll();
@@ -194,6 +206,7 @@ public class FriendPanel extends JPanel {
         } else {
             JButton addBtn = Theme.primaryButton("Kết bạn");
             addBtn.setFont(Theme.uiFont(Font.BOLD, 11.5f));
+            // [UI -> GỬI] Bấm "Kết bạn": gửi gói FRIEND_REQUEST tới targetId qua TLS (:9000)
             addBtn.addActionListener(e -> {
                 addBtn.setEnabled(false);
                 Theme.runAsync(
@@ -258,8 +271,10 @@ public class FriendPanel extends JPanel {
         incomingSection.repaint();
     }
 
+    /** [UI -> GỬI] Chấp nhận (FRIEND_ACCEPT) hoặc từ chối (FRIEND_REJECT) lời mời kết bạn. */
     private void handleInvite(String type, long userId) {
         Theme.runAsync(
+                // [GỬI] Gửi gói FRIEND_ACCEPT hoặc FRIEND_REJECT lên server qua TLS (:9000)
                 () -> conn.request(new Packet(type).put("userId", userId)),
                 res -> {
                     if (!res.isOk()) {
@@ -332,6 +347,7 @@ public class FriendPanel extends JPanel {
         JMenuItem block = new JMenuItem("🚫 Chặn người dùng");
         block.setFont(Theme.emojiFont(12.5f));
         block.setForeground(Theme.PRIMARY_RED_DARK);
+        // [UI -> GỬI] Menu chuột phải "Chặn người dùng" -> gửi gói USER_BLOCK
         block.addActionListener(ev -> {
             int ok = JOptionPane.showConfirmDialog(this,
                     "Chặn " + u.name + "? Người này sẽ không thể nhắn tin hay gọi thoại cho bạn.",
@@ -348,6 +364,7 @@ public class FriendPanel extends JPanel {
         });
         JMenuItem remove = new JMenuItem("Huỷ kết bạn");
         remove.setForeground(Theme.PRIMARY_RED_DARK);
+        // [UI -> GỬI] Menu chuột phải "Huỷ kết bạn" -> gửi gói FRIEND_REMOVE
         remove.addActionListener(ev -> {
             int ok = JOptionPane.showConfirmDialog(this,
                     "Huỷ kết bạn với " + u.name + "?", "Xác nhận", JOptionPane.YES_NO_OPTION);
@@ -408,8 +425,10 @@ public class FriendPanel extends JPanel {
         blockedSection.repaint();
     }
 
+    /** [UI -> GỬI] Bấm vào bạn bè: gửi gói CONV_OPEN_DIRECT để mở (hoặc tạo mới) phòng chat 1-1. */
     private void openDirectChat(User peer) {
         Theme.runAsync(
+                // [GỬI] Gửi gói CONV_OPEN_DIRECT kèm peerId qua TLS (:9000)
                 () -> conn.request(new Packet(PacketType.CONV_OPEN_DIRECT).put("peerId", peer.id)),
                 res -> {
                     if (!res.isOk()) {

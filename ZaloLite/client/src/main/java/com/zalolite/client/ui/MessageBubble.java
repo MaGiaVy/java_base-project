@@ -15,7 +15,13 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/** Một bong bóng tin nhắn (đi/đến/hệ thống) kèm media, reply, forward, link preview, reaction và menu chuột phải. */
+/**
+ * Thành phần hiển thị một bong bóng tin nhắn (tin gửi đi, tin nhận về hoặc thông báo hệ thống):
+ *  - Hỗ trợ nội dung văn bản, ảnh thumbnail, video, file đính kèm, tin nhắn thoại (WAV), trích dẫn trả lời, chuyển tiếp.
+ *  - Tự động tải xem trước đường link (Link Preview) bất đồng bộ qua {@link LinkPreviewFetcher} (HTTP/1.1 thuần Socket).
+ *  - Hiển thị nhãn phương thức truyền ({@code [P2P ⚡]} hoặc {@code [Server]}) và trạng thái giao nhận (Đã gửi / Đã nhận / Đã xem).
+ *  - Menu chuột phải kích hoạt thả cảm xúc (Reaction), Trả lời (Reply), Chuyển tiếp (Forward), Thu hồi (Recall).
+ */
 public class MessageBubble extends JPanel {
     private static final String[] QUICK_REACTIONS = {"❤️", "😆", "😮", "😢", "👍"};
     private static final int MAX_TEXT_WIDTH = 360;
@@ -368,6 +374,10 @@ public class MessageBubble extends JPanel {
         return area;
     }
 
+    /**
+     * [UI -> GỬI] Tự động gọi {@link LinkPreviewFetcher#fetch(String)} (HTTP/1.1 thuần Socket cổng 80/443)
+     * ở luồng nền để lấy tiêu đề trang web và gắn thẻ xem trước vào dưới bong bóng tin nhắn.
+     */
     private void attachLinkPreviewAsync(JPanel container, String url, boolean mine) {
         Theme.runAsync(
                 () -> LinkPreviewFetcher.fetch(url),
@@ -438,6 +448,7 @@ public class MessageBubble extends JPanel {
         });
     }
 
+    /** [UI -> GỬI] Mở menu chuột phải trên bong bóng tin nhắn (thả Reaction, Trả lời, Chuyển tiếp, Thu hồi). */
     private void showContextMenu(MouseEvent e) {
         if (msg.recalled || Message.KIND_SYSTEM.equals(msg.kind)) return;
         JPopupMenu menu = new JPopupMenu();
@@ -554,6 +565,7 @@ public class MessageBubble extends JPanel {
         return sb.toString();
     }
 
+    /** [PUSH -> UI] Đổi nội dung bong bóng sang "Tin nhắn đã được thu hồi" khi nhận gói MSG_RECALLED. */
     public void markRecalled() {
         msg.recalled = true;
         if (msg.reactions != null) msg.reactions.clear();
@@ -562,6 +574,7 @@ public class MessageBubble extends JPanel {
         if (metaLabel != null) metaLabel.setText(buildMetaText());
     }
 
+    /** [PUSH -> UI] Cập nhật thanh reaction dưới bong bóng khi nhận gói MSG_REACTED từ server. */
     public void applyReaction(long userId, String emoji) {
         if (msg.reactions == null) msg.reactions = new LinkedHashMap<>();
         if (emoji == null || emoji.isBlank()) {
@@ -572,6 +585,7 @@ public class MessageBubble extends JPanel {
         renderReactions();
     }
 
+    /** [PUSH -> UI] Cập nhật trạng thái Đã nhận / Đã xem khi nhận gói SEEN_UPDATE hoặc DELIVERY_UPDATE. */
     public void updateDelivery(String state, int seenCount) {
         if (state != null) msg.deliveryState = state;
         if (seenCount > msg.seenCount) msg.seenCount = seenCount;

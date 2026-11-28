@@ -14,7 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Hộp thoại tạo nhóm chat mới (chọn tên nhóm và tối thiểu 2 bạn bè). */
+/**
+ * Hộp thoại tạo nhóm chat mới (nhập tên nhóm và chọn tối thiểu 2 bạn bè).
+ * Gọi {@code FRIEND_LIST} để nạp danh sách bạn bè và gửi {@code GROUP_CREATE} qua TLS (:9000).
+ */
 public class GroupCreateDialog extends JDialog {
     private final Connection conn;
     private final Consumer<Conversation> onCreated;
@@ -76,10 +79,12 @@ public class GroupCreateDialog extends JDialog {
         loadFriends();
     }
 
+    /** [UI -> GỬI] Lấy danh sách bạn bè từ server (FRIEND_LIST) để người dùng tick chọn vào nhóm. */
     private void loadFriends() {
         listPanel.removeAll();
         listPanel.add(new JLabel("Đang tải danh sách bạn bè..."));
         Theme.runAsync(
+                // [GỬI] Gửi gói FRIEND_LIST qua kênh TLS (:9000)
                 () -> conn.request(new Packet(PacketType.FRIEND_LIST)),
                 res -> {
                     listPanel.removeAll();
@@ -111,6 +116,7 @@ public class GroupCreateDialog extends JDialog {
         );
     }
 
+    /** [UI -> GỬI] Bấm nút "Tạo nhóm": kiểm tra hợp lệ rồi gửi gói GROUP_CREATE kèm tên nhóm và danh sách memberIds. */
     private void doCreate() {
         String groupName = nameField.getText().trim();
         if (groupName.isEmpty()) {
@@ -128,6 +134,7 @@ public class GroupCreateDialog extends JDialog {
         createBtn.setEnabled(false);
         status.setText(" ");
         Theme.runAsync(
+                // [GỬI] Gửi yêu cầu GROUP_CREATE lên server qua TLS (:9000)
                 () -> conn.request(new Packet(PacketType.GROUP_CREATE)
                         .put("name", groupName)
                         .put("memberIds", memberIds)),

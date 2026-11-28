@@ -17,7 +17,10 @@ import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Pure-Java WAV voice recorder and Clip-based audio player.
+ * Bộ ghi âm và phát tin nhắn thoại (Voice Message) thuần Java Sound API (javax.sound.sampled).
+ * - Ghi âm từ micro định dạng PCM 16kHz, 16-bit, mono (tối đa 60 giây) rồi đóng gói ra file tạm .wav.
+ * - File .wav sau đó được gửi qua {@link P2pTransfer} (trực tiếp) hoặc {@link FileTransfer} (TCP :9001).
+ * - Phát lại tin nhắn thoại bằng {@link Clip} với callback báo khi phát xong.
  */
 public class AudioHelper {
 
@@ -35,6 +38,7 @@ public class AudioHelper {
     private final Object playLock = new Object();
     private Clip currentClip;
 
+    /** Mở micro và bắt đầu luồng nền thu âm PCM (tự dừng sau {@link #MAX_SECONDS} giây). */
     public synchronized void startRecording(Runnable onAutoStop) throws IOException {
         if (recording) {
             throw new IOException("Recording already in progress");
@@ -63,6 +67,7 @@ public class AudioHelper {
         this.recordThread.start();
     }
 
+    /** Vòng lặp đọc dữ liệu PCM từ micro vào bộ đệm RAM cho tới khi người dùng dừng hoặc đạt 60s. */
     private void captureLoop(TargetDataLine mic, int maxBytes, Runnable onAutoStop) {
         byte[] chunk = new byte[4096];
         boolean autoStopped = false;
@@ -90,7 +95,7 @@ public class AudioHelper {
             try {
                 finalizeWav();
             } catch (IOException ignored) {
-                // Caller will see error if it later calls stopRecording().
+                // Bên gọi sẽ nhận lỗi nếu sau đó gọi stopRecording().
             }
             if (onAutoStop != null) {
                 onAutoStop.run();
@@ -98,6 +103,7 @@ public class AudioHelper {
         }
     }
 
+    /** Dừng ghi âm, chờ luồng thu kết thúc và xuất ra file .wav kèm thời lượng (giây). */
     public RecordedAudio stopRecording() throws IOException {
         Thread t;
         TargetDataLine mic;
@@ -122,6 +128,7 @@ public class AudioHelper {
         return finalizeWav();
     }
 
+    /** Ghi mảng byte PCM đã thu thành file WAV chuẩn trong thư mục tạm. */
     private synchronized RecordedAudio finalizeWav() throws IOException {
         if (lastResult != null) {
             return lastResult;
@@ -141,6 +148,7 @@ public class AudioHelper {
         return recording;
     }
 
+    /** Tính thời lượng (giây) của một file WAV có sẵn dựa trên frameLength / frameRate. */
     public static int wavDurationSec(File wavFile) throws IOException {
         try (AudioInputStream ais = AudioSystem.getAudioInputStream(wavFile)) {
             long frames = ais.getFrameLength();
@@ -154,6 +162,7 @@ public class AudioHelper {
         }
     }
 
+    /** Phát file WAV tin nhắn thoại; dừng clip đang phát trước đó (nếu có). */
     public void play(File wavFile, Runnable onFinished) throws IOException {
         stopPlayback();
         Clip clip;
@@ -185,6 +194,7 @@ public class AudioHelper {
         clip.start();
     }
 
+    /** Dừng phát tin nhắn thoại hiện tại và giải phóng Clip. */
     public void stopPlayback() {
         Clip clip;
         synchronized (playLock) {

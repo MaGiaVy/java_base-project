@@ -10,14 +10,20 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * [CSDL] Lớp DAO thao tác với bảng {@code friendships} trong PostgreSQL.
+ * Quản lý toàn bộ quan hệ xã hội giữa hai người dùng: lời mời kết bạn (PENDING), bạn bè (ACCEPTED),
+ * chặn/bỏ chặn (BLOCKED) và truy vấn danh sách bạn bè để phát trạng thái online (PRESENCE).
+ */
 public class FriendDao {
     private final Db db;
 
+    /** Khởi tạo FriendDao với nguồn kết nối Db. */
     public FriendDao(Db db) {
         this.db = db;
     }
 
-    /** Gửi lời mời kết bạn. Trả về null nếu thành công, hoặc thông báo lỗi nếu bị từ chối. */
+    /** [CSDL] Kiểm tra quan hệ 2 chiều hiện có; nếu chưa có thì chèn lời mời PENDING mới. Trả về null nếu thành công hoặc chuỗi lý do từ chối. */
     public String request(long fromId, long toId) throws SQLException {
         if (fromId == toId) return "Không thể tự kết bạn với chính mình";
         String check = "SELECT status FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)";
@@ -46,6 +52,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Chấp nhận lời mời kết bạn đang ở trạng thái PENDING (chuyển sang ACCEPTED). */
     public boolean accept(long userId, long requesterId) throws SQLException {
         String sql = "UPDATE friendships SET status = 'ACCEPTED' WHERE user_id = ? AND friend_id = ? AND status = 'PENDING'";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -55,6 +62,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Từ chối lời mời kết bạn bằng cách xóa bản ghi PENDING tương ứng. */
     public boolean reject(long userId, long requesterId) throws SQLException {
         String sql = "DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'PENDING'";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -64,6 +72,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Hủy kết bạn: xóa quan hệ giữa u1 và u2 theo cả 2 chiều. */
     public boolean remove(long u1, long u2) throws SQLException {
         String sql = "DELETE FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -75,6 +84,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Chặn người dùng trong một transaction: xóa mọi quan hệ cũ giữa hai người rồi ghi nhận bản ghi BLOCKED. */
     public boolean block(long blockerId, long targetId) throws SQLException {
         if (blockerId == targetId) return false;
         String del = "DELETE FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)";
@@ -103,6 +113,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Bỏ chặn: xóa bản ghi BLOCKED do blockerId tạo ra đối với targetId. */
     public boolean unblock(long blockerId, long targetId) throws SQLException {
         String sql = "DELETE FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'BLOCKED'";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -112,6 +123,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Kiểm tra xem u1 hoặc u2 có đang chặn nhau hay không (dùng để chặn nhắn tin 1-1 và chặn gọi thoại). */
     public boolean isBlockedEitherWay(long u1, long u2) throws SQLException {
         String sql = "SELECT 1 FROM friendships "
                 + "WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)) AND status = 'BLOCKED' LIMIT 1";
@@ -126,6 +138,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Lấy danh sách người dùng đang bị userId chặn. */
     public List<User> listBlocked(long userId) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
                 + "JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? AND f.status = 'BLOCKED' ORDER BY f.created_at DESC";
@@ -135,6 +148,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Lấy danh sách bạn bè (status = 'ACCEPTED') của userId, sắp xếp theo tên. */
     public List<User> listFriends(long userId) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
                 + "JOIN users u ON u.id = CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END "
@@ -147,6 +161,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Lấy danh sách lời mời kết bạn đến (người khác gửi tới userId, đang PENDING). */
     public List<User> listIncoming(long userId) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
                 + "JOIN users u ON u.id = f.user_id WHERE f.friend_id = ? AND f.status = 'PENDING' ORDER BY f.created_at DESC";
@@ -156,6 +171,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Lấy danh sách lời mời kết bạn đi (userId đã gửi cho người khác, đang PENDING). */
     public List<User> listOutgoing(long userId) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar FROM friendships f "
                 + "JOIN users u ON u.id = f.friend_id WHERE f.user_id = ? AND f.status = 'PENDING' ORDER BY f.created_at DESC";
@@ -165,6 +181,7 @@ public class FriendDao {
         }
     }
 
+    /** [CSDL] Lấy danh sách ID bạn bè của userId để Server phát sự kiện PRESENCE (online/offline). */
     public List<Long> listFriendIds(long userId) throws SQLException {
         String sql = "SELECT CASE WHEN user_id = ? THEN friend_id ELSE user_id END FROM friendships "
                 + "WHERE (user_id = ? OR friend_id = ?) AND status = 'ACCEPTED'";
@@ -180,6 +197,7 @@ public class FriendDao {
         return ids;
     }
 
+    /** Hàm tiện ích thực thi PreparedStatement và gom ResultSet thành List<User>. */
     private static List<User> readUsers(PreparedStatement ps) throws SQLException {
         List<User> list = new ArrayList<>();
         try (ResultSet rs = ps.executeQuery()) {

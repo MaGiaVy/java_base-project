@@ -15,13 +15,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * [CSDL] Lớp DAO thao tác với hai bảng {@code messages} và {@code reactions} trong PostgreSQL.
+ * Đảm nhận lưu tin nhắn mới (kèm thông tin tin được reply), phân trang lịch sử tin nhắn (lọc theo thời điểm joined_at),
+ * thu hồi tin nhắn (recall), thả/gỡ biểu tượng cảm xúc (reaction) và tìm kiếm tin nhắn theo từ khóa.
+ */
 public class MessageDao {
     private final Db db;
 
+    /** Khởi tạo MessageDao với nguồn kết nối Db. */
     public MessageDao(Db db) {
         this.db = db;
     }
 
+    /** [CSDL] Lưu tin nhắn mới vào bảng messages (RETURNING id, created_at), đồng thời nạp thêm tên người gửi và bản xem trước tin được reply (nếu có). */
     public Message save(Message m) throws SQLException {
         String sql = "INSERT INTO messages(conv_id, sender_id, kind, content, file_path, file_name, file_size, duration_sec, reply_to, forwarded, created_at) "
                 + "VALUES (?,?,?,?,?,?,?,?,?,?,clock_timestamp()) RETURNING id, EXTRACT(EPOCH FROM created_at) * 1000";
@@ -70,6 +77,10 @@ public class MessageDao {
         return m;
     }
 
+    /**
+     * [CSDL] Tải lịch sử tin nhắn theo phân trang ngược (cursor beforeId, lấy mới nhất trước rồi đảo ngược về thứ tự thời gian tăng dần).
+     * Chỉ trả các tin có created_at >= vm.joined_at (thành viên mới vào nhóm không xem được tin cũ), kèm số người đã xem và toàn bộ reactions.
+     */
     public List<Message> history(long convId, long viewerId, long beforeId, int limit) throws SQLException {
         String sql = "SELECT m.id, m.conv_id, COALESCE(m.sender_id, 0) AS sender_id, u.name AS sender_name, "
                 + "m.kind, m.content, m.file_path, m.file_name, m.file_size, m.duration_sec, m.reply_to, m.forwarded, m.recalled, "
@@ -104,6 +115,7 @@ public class MessageDao {
         return list;
     }
 
+    /** [CSDL] Thu hồi tin nhắn: chỉ cho phép chính người gửi (sender_id = ?) thu hồi tin chưa thu hồi, xóa nội dung và trả về conv_id (0 nếu thất bại). */
     public long recall(long msgId, long senderId) throws SQLException {
         String sql = "UPDATE messages SET recalled = true, content = NULL "
                 + "WHERE id = ? AND sender_id = ? AND recalled = false RETURNING conv_id";
@@ -116,6 +128,7 @@ public class MessageDao {
         }
     }
 
+    /** [CSDL] Thả hoặc gỡ cảm xúc (emoji) trên tin nhắn sau khi kiểm tra userId thuộc hội thoại; emoji rỗng sẽ DELETE, có emoji sẽ UPSERT. */
     public long react(long msgId, long userId, String emoji) throws SQLException {
         String findConv = "SELECT m.conv_id FROM messages m "
                 + "JOIN members mem ON mem.conv_id = m.conv_id AND mem.user_id = ? WHERE m.id = ?";
@@ -149,6 +162,7 @@ public class MessageDao {
         }
     }
 
+    /** [CSDL] Tìm tối đa 50 tin nhắn chưa thu hồi trong hội thoại có nội dung khớp từ khóa (ILIKE), chỉ trong phạm vi sau khi viewerId vào nhóm. */
     public List<Message> search(long convId, long viewerId, String query) throws SQLException {
         if (query == null || query.isBlank()) return List.of();
         String sql = "SELECT m.id, m.conv_id, COALESCE(m.sender_id, 0) AS sender_id, u.name AS sender_name, "
@@ -175,6 +189,7 @@ public class MessageDao {
         return list;
     }
 
+    /** Ánh xạ 1 dòng ResultSet thành DTO Message (bao gồm cả thông tin reply và trạng thái SEEN/SENT). */
     private static Message mapMsg(ResultSet rs) throws SQLException {
         Message m = new Message();
         m.id = rs.getLong("id");
@@ -205,6 +220,7 @@ public class MessageDao {
         return m;
     }
 
+    /** Tạo đoạn xem trước ngắn (tối đa 80 ký tự) cho khung trích dẫn tin nhắn được trả lời (reply). */
     private static String formatReplyPreview(boolean recalled, String kind, String content, String fileName) {
         if (recalled) return "Tin nhắn đã được thu hồi";
         String text = (content != null && !content.isBlank()) ? content
@@ -219,6 +235,7 @@ public class MessageDao {
         return text.length() > 80 ? text.substring(0, 80) : text;
     }
 
+    /** [CSDL] Nạp hàng loạt reactions cho cả danh sách tin nhắn chỉ bằng 1 câu SQL `WHERE msg_id = ANY(?)` (tránh lỗi N+1 query). */
     private static void attachReactions(Connection c, List<Message> list) throws SQLException {
         if (list.isEmpty()) return;
         Map<Long, Message> byId = new HashMap<>(list.size());

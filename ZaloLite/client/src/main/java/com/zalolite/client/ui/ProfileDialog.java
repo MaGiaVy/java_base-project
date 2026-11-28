@@ -9,7 +9,10 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.function.Consumer;
 
-/** Hộp thoại chỉnh sửa hồ sơ cá nhân và đổi mật khẩu theo phong cách Berry Pop. */
+/**
+ * Hộp thoại chỉnh sửa hồ sơ cá nhân (tên hiển thị, email) và đổi mật khẩu.
+ * Gửi các gói {@code PROFILE_UPDATE} và {@code PASSWORD_CHANGE} lên server qua kênh TLS (:9000).
+ */
 public class ProfileDialog extends JDialog {
     public ProfileDialog(Frame owner, Connection conn, User me, Consumer<User> onUpdated) {
         super(owner, "Hồ sơ cá nhân", true);
@@ -80,6 +83,7 @@ public class ProfileDialog extends JDialog {
         passCard.add(changePassBtn);
         root.add(passCard);
 
+        // [UI -> GỬI] Bấm nút "Lưu thông tin": gửi gói PROFILE_UPDATE cập nhật tên/email lên server
         saveInfoBtn.addActionListener(e -> {
             String newName = nameField.getText().trim();
             String newEmail = emailField.getText().trim();
@@ -89,6 +93,7 @@ public class ProfileDialog extends JDialog {
             }
             saveInfoBtn.setEnabled(false);
             infoStatus.setText(" ");
+            // [GỬI] Gửi gói PROFILE_UPDATE qua TLS (:9000)
             Theme.runAsync(() -> conn.request(new Packet(PacketType.PROFILE_UPDATE)
                     .put("name", newName)
                     .put("email", newEmail)), res -> {
@@ -110,6 +115,7 @@ public class ProfileDialog extends JDialog {
             });
         });
 
+        // [UI -> GỬI] Bấm nút "Đổi mật khẩu": kiểm tra hợp lệ rồi gửi gói PASSWORD_CHANGE qua TLS (:9000)
         changePassBtn.addActionListener(e -> {
             String oldPass = new String(oldPassField.getPassword());
             String newPass = new String(newPassField.getPassword());
@@ -128,6 +134,7 @@ public class ProfileDialog extends JDialog {
             }
             changePassBtn.setEnabled(false);
             passStatus.setText(" ");
+            // [GỬI] Gửi gói PASSWORD_CHANGE (oldPassword + newPassword) qua TLS (:9000)
             Theme.runAsync(() -> conn.request(new Packet(PacketType.PASSWORD_CHANGE)
                     .put("oldPassword", oldPass)
                     .put("newPassword", newPass)), res -> {

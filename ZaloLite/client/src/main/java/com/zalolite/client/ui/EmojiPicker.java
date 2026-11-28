@@ -6,7 +6,10 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
 
-/** Popup chọn 36 emoji phổ biến dùng font hỗ trợ emoji. */
+/**
+ * Popup chọn nhanh 36 biểu tượng cảm xúc (emoji) theo lưới 6x6.
+ * Khi người dùng bấm vào một emoji, callback {@code onPick} chèn emoji đó vào ô nhập tin nhắn ở {@link ChatPanel}.
+ */
 public class EmojiPicker extends JPopupMenu {
     private static final String[] EMOJIS = {
             "😀", "😂", "🥰", "😍", "🤩", "😎",

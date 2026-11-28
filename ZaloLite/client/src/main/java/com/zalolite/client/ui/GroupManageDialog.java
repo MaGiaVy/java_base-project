@@ -14,7 +14,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Hộp thoại xem & quản lý thành viên nhóm (đổi tên, thêm/xoá thành viên, rời nhóm). */
+/**
+ * Hộp thoại xem và quản lý thành viên nhóm chat (đổi tên nhóm, thêm/xóa thành viên, rời nhóm).
+ * Gửi các gói {@code GROUP_MEMBERS}, {@code GROUP_RENAME}, {@code GROUP_ADD_MEMBER},
+ * {@code GROUP_REMOVE_MEMBER} và {@code GROUP_LEAVE} lên server qua kênh TLS (:9000).
+ */
 public class GroupManageDialog extends JDialog {
     private final Connection conn;
     private final User me;
@@ -97,10 +101,12 @@ public class GroupManageDialog extends JDialog {
         loadMembers();
     }
 
+    /** [UI -> GỬI] Lấy danh sách thành viên hiện tại của nhóm (GROUP_MEMBERS) qua TLS (:9000). */
     private void loadMembers() {
         membersPanel.removeAll();
         membersPanel.add(new JLabel("Đang tải thành viên..."));
         Theme.runAsync(
+                // [GỬI] Gửi gói GROUP_MEMBERS kèm convId
                 () -> conn.request(new Packet(PacketType.GROUP_MEMBERS).put("convId", conv.id)),
                 res -> {
                     membersPanel.removeAll();
@@ -166,11 +172,13 @@ public class GroupManageDialog extends JDialog {
         return row;
     }
 
+    /** [UI -> GỬI] Trưởng nhóm bấm "Đổi tên": gửi gói GROUP_RENAME qua TLS (:9000). */
     private void doRename() {
         String newName = JOptionPane.showInputDialog(this, "Nhập tên nhóm mới:", conv.name);
         if (newName == null || newName.trim().isEmpty()) return;
         String trimmed = newName.trim();
         Theme.runAsync(
+                // [GỬI] Gửi gói GROUP_RENAME kèm convId và tên mới
                 () -> conn.request(new Packet(PacketType.GROUP_RENAME)
                         .put("convId", conv.id).put("name", trimmed)),
                 res -> {
@@ -187,8 +195,10 @@ public class GroupManageDialog extends JDialog {
         );
     }
 
+    /** [UI -> GỬI] Trưởng nhóm bấm "+ Thêm thành viên": lấy FRIEND_LIST rồi gửi GROUP_ADD_MEMBER. */
     private void doAddMember() {
         Theme.runAsync(
+                // [GỬI] Lấy danh sách bạn bè để lọc ra người chưa ở trong nhóm
                 () -> conn.request(new Packet(PacketType.FRIEND_LIST)),
                 res -> {
                     if (!res.isOk()) {
@@ -207,6 +217,7 @@ public class GroupManageDialog extends JDialog {
                             JOptionPane.PLAIN_MESSAGE, null, candidates.toArray(), candidates.get(0));
                     if (chosen == null) return;
                     Theme.runAsync(
+                            // [GỬI] Gửi gói GROUP_ADD_MEMBER thêm người được chọn vào nhóm
                             () -> conn.request(new Packet(PacketType.GROUP_ADD_MEMBER)
                                     .put("convId", conv.id).put("userId", chosen.id)),
                             addRes -> {
@@ -224,11 +235,13 @@ public class GroupManageDialog extends JDialog {
         );
     }
 
+    /** [UI -> GỬI] Trưởng nhóm bấm "Xoá" thành viên: gửi gói GROUP_REMOVE_MEMBER qua TLS (:9000). */
     private void doRemoveMember(User target) {
         int ok = JOptionPane.showConfirmDialog(this,
                 "Xoá " + target.name + " khỏi nhóm?", "Xác nhận", JOptionPane.YES_NO_OPTION);
         if (ok != JOptionPane.YES_OPTION) return;
         Theme.runAsync(
+                // [GỬI] Gửi gói GROUP_REMOVE_MEMBER kèm convId và userId cần xóa
                 () -> conn.request(new Packet(PacketType.GROUP_REMOVE_MEMBER)
                         .put("convId", conv.id).put("userId", target.id)),
                 res -> {
@@ -242,12 +255,14 @@ public class GroupManageDialog extends JDialog {
         );
     }
 
+    /** [UI -> GỬI] Bấm "Rời nhóm": gửi gói GROUP_LEAVE qua TLS (:9000) rồi đóng hộp thoại. */
     private void doLeave() {
         int ok = JOptionPane.showConfirmDialog(this,
                 "Bạn chắc chắn muốn rời khỏi nhóm \"" + conv.name + "\"?",
                 "Rời nhóm", JOptionPane.YES_NO_OPTION);
         if (ok != JOptionPane.YES_OPTION) return;
         Theme.runAsync(
+                // [GỬI] Gửi gói GROUP_LEAVE lên server
                 () -> conn.request(new Packet(PacketType.GROUP_LEAVE).put("convId", conv.id)),
                 res -> {
                     if (!res.isOk()) {

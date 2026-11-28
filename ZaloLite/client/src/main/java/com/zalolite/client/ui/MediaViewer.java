@@ -11,7 +11,10 @@ import java.io.File;
 import java.io.IOException;
 
 /**
- * Helpers for image thumbnails, full-screen/modal image preview, and opening media with OS apps.
+ * Tiện ích hiển thị đa phương tiện trên client:
+ *  - {@link #loadThumbnail}: đọc và thu nhỏ ảnh làm thumbnail hiển thị trong {@link MessageBubble}.
+ *  - {@link #showImageDialog}: mở hộp thoại xem ảnh kích thước lớn (85% màn hình, hỗ trợ bấm ESC hoặc click để đóng).
+ *  - {@link #openWithSystemPlayer}: mở video/tài liệu đã tải về bằng ứng dụng mặc định của hệ điều hành.
  */
 public final class MediaViewer {
     private MediaViewer() {

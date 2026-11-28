@@ -25,8 +25,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Cửa sổ chính ZaloLite Berry:
- * Thanh rail tím mận (58px) | Cột giữa hội thoại / bạn bè (290px) | Khung chat Berry Pop.
+ * Cửa sổ chính của ứng dụng ZaloLite Client sau khi đăng nhập thành công:
+ *  - Thanh rail bên trái: avatar cá nhân (mở {@link ProfileDialog}), chuyển tab Tin nhắn / Bạn bè, tạo nhóm, tắt/bật chuông, nút Đăng xuất.
+ *  - Cột giữa: danh sách cuộc trò chuyện (ghim, tìm kiếm, badge chưa đọc) hoặc {@link FriendPanel}.
+ *  - Cột phải: màn hình chào mừng hoặc khung chat đang mở ({@link ChatPanel}).
+ *  - Quản lý vòng đời mạng client: lắng nghe P2P ({@link P2pTransfer}), đăng ký listener nhận toàn bộ gói push từ {@link Connection}
+ *    trong {@link #onPush(Packet)}, và điều phối tín hiệu cuộc gọi thoại UDP ({@link VoiceCallSession} + {@link VoiceCallDialog}).
  */
 public class MainFrame extends JFrame {
     private static final String TAB_CHATS = "CHATS";
@@ -169,7 +173,7 @@ public class MainFrame extends JFrame {
         body.add(rightPanel, BorderLayout.CENTER);
         add(body, BorderLayout.CENTER);
 
-        // Listeners mạng & vòng đời cửa sổ
+        // [NHẬN] Đăng ký listener nhận mọi gói push real-time từ Connection.readLoop() (chạy trên EDT)
         conn.addListener(this::onPush);
         conn.setOnDisconnect(() -> {
             JOptionPane.showMessageDialog(this, "Mất kết nối tới máy chủ.");
@@ -186,23 +190,30 @@ public class MainFrame extends JFrame {
             }
         });
 
+        // Khởi động ServerSocket P2P cục bộ và nạp danh sách hội thoại + bạn bè ban đầu
         startP2pListener();
         loadConversations();
         friendPanel.refresh();
     }
 
+    /**
+     * [CỔNG/GIAO THỨC] Mở ServerSocket P2P cục bộ trên cổng ngẫu nhiên ({@link P2pTransfer#start()})
+     * rồi [GỬI] gói {@code P2P_REGISTER} báo số cổng lên server (:9000) để các client khác có thể gửi file trực tiếp.
+     */
     private void startP2pListener() {
         try {
             p2p = new P2pTransfer(this::onP2pFileReceived);
             p2p.start();
             int port = p2p.getListenPort();
             System.out.println("[INFO] P2P đang nghe :" + port);
+            // [GỬI] Báo cổng lắng nghe P2P của client này lên server qua kênh TLS (:9000)
             Theme.runAsync(() -> conn.request(new Packet(PacketType.P2P_REGISTER).put("port", port)), null, null);
         } catch (Exception e) {
             System.err.println("[WARN] Không mở được cổng P2P: " + e.getMessage());
         }
     }
 
+    /** [NHẬN] Callback từ {@link P2pTransfer} khi nhận xong file trực tiếp: lưu vào cache cục bộ và hiện thông báo toast. */
     private void onP2pFileReceived(P2pTransfer.ReceivedP2pFile f) {
         String key = "p2p://" + f.convId() + "/" + f.fileName();
         localMediaFiles.put(key, f.savedFile());
@@ -305,8 +316,10 @@ public class MainFrame extends JFrame {
         toastTimer.restart();
     }
 
+    /** [UI -> GỬI] Lấy danh sách cuộc trò chuyện của người dùng (CONV_LIST) qua TLS (:9000). */
     private void loadConversations() {
         Theme.runAsync(
+                // [GỬI] Gửi yêu cầu CONV_LIST lên server
                 () -> conn.request(new Packet(PacketType.CONV_LIST)),
                 res -> {
                     if (!res.isOk()) return;
@@ -450,9 +463,11 @@ public class MainFrame extends JFrame {
         menu.show(e.getComponent(), e.getX(), e.getY());
     }
 
+    /** [UI -> GỬI] Menu chuột phải "Ghim/Bỏ ghim hội thoại": gửi gói CONV_PIN qua TLS (:9000). */
     private void togglePin(Conversation c) {
         boolean next = !c.pinned;
         Theme.runAsync(
+                // [GỬI] Gửi gói CONV_PIN kèm convId và trạng thái pinned
                 () -> conn.request(new Packet(PacketType.CONV_PIN)
                         .put("convId", c.id).put("pinned", next)),
                 res -> {
@@ -522,12 +537,14 @@ public class MainFrame extends JFrame {
         }).setVisible(true);
     }
 
+    /** [UI -> GỬI] Bấm nút Đăng xuất: dọn chat/call/P2P, gửi gói LOGOUT qua TLS (:9000) và quay về {@link LoginFrame}. */
     private void doLogout() {
         if (activeChat != null) activeChat.cleanup();
         endActiveCall(true, null);
         if (p2p != null) p2p.stop();
         Theme.runAsync(() -> {
             try {
+                // [GỬI] Thông báo server đăng xuất phiên hiện tại
                 conn.request(new Packet(PacketType.LOGOUT));
             } catch (Exception ignored) {
             }
@@ -555,8 +572,13 @@ public class MainFrame extends JFrame {
         };
     }
 
-    // --- Xử lý toàn bộ sự kiện đẩy từ Server (đã chạy trên EDT) ---
+    // --- [PUSH -> UI] Bộ điều phối trung tâm xử lý toàn bộ sự kiện đẩy từ Server (đã chạy trên Swing EDT) ---
 
+    /**
+     * [NHẬN] & [PUSH -> UI] Nhận mọi gói tin push từ {@link Connection#readLoop()} và phân tuyến cập nhật giao diện:
+     * MSG_NEW, PRESENCE, TYPING, SEEN_UPDATE, MSG_DELIVERED, MSG_RECALLED, MSG_REACTED,
+     * FRIEND_EVENT, CONV_UPDATE, và nhóm tín hiệu gọi thoại (CALL_OFFER / CALL_ANSWER / CALL_REJECT / CALL_END).
+     */
     private void onPush(Packet p) {
         if (p == null || p.type == null) return;
         switch (p.type) {
@@ -611,15 +633,22 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /**
+     * [UI -> GỬI] Bấm nút gọi thoại trong {@link ChatPanel}:
+     * mở {@link VoiceCallSession} (tạo DatagramSocket UDP cổng ngẫu nhiên), mở {@link VoiceCallDialog}
+     * rồi [GỬI] gói {@code CALL_OFFER} kèm {@code udpPort} qua kênh TLS (:9000) tới đối phương.
+     */
     private void startOutgoingCall(long peerId, String peerName) {
         if (peerId <= 0 || activeCallDialog != null) return;
         try {
+            // [CỔNG/GIAO THỨC] Mở DatagramSocket UDP cổng tạm để chuẩn bị truyền/nhận PCM audio
             activeCallSession = new VoiceCallSession();
             activeCallPeerId = peerId;
             int udpPort = activeCallSession.getLocalPort();
             activeCallDialog = VoiceCallDialog.outgoing(this, peerName, peerId, () -> endActiveCall(true, null));
             activeCallDialog.setVisible(true);
             Theme.runAsync(
+                    // [GỬI] Gửi tín hiệu mời gọi CALL_OFFER kèm cổng UDP cục bộ qua kênh TLS (:9000)
                     () -> conn.request(new Packet(PacketType.CALL_OFFER).put("targetId", peerId).put("udpPort", udpPort)),
                     res -> {
                         if (!res.isOk()) {
@@ -633,12 +662,18 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /**
+     * [PUSH -> UI] Xử lý cuộc gọi đến (CALL_OFFER) từ server: hiện {@link VoiceCallDialog}.
+     * Nếu bấm Nghe máy: mở {@link VoiceCallSession} UDP, bắt đầu stream tới {@code callerIp:callerUdpPort}
+     * và [GỬI] gói {@code CALL_ANSWER} kèm cổng UDP của mình qua TLS. Nếu Từ chối -> gửi {@code CALL_REJECT}.
+     */
     private void handleCallOffer(Packet p) {
         long callerId = p.num("callerId");
         String callerName = p.str("callerName");
         String callerIp = p.str("callerIp");
         int callerUdpPort = (int) p.num("udpPort");
         if (activeCallDialog != null) {
+            // [GỬI] Đang trong cuộc gọi khác -> tự động trả CALL_REJECT báo bận
             Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_REJECT)
                     .put("callerId", callerId).put("reason", "Người dùng đang bận")), null, null);
             return;
@@ -648,10 +683,12 @@ public class MainFrame extends JFrame {
         activeCallDialog = VoiceCallDialog.incoming(this, callerName, callerId,
                 () -> {
                     try {
+                        // [CỔNG/GIAO THỨC] Mở DatagramSocket UDP và bắt đầu gửi/nhận PCM trực tiếp tới callerIp:callerUdpPort
                         activeCallSession = new VoiceCallSession();
                         int myPort = activeCallSession.getLocalPort();
                         activeCallSession.startAudio(callerIp, callerUdpPort);
                         if (activeCallDialog != null) activeCallDialog.setConnected(activeCallSession, () -> endActiveCall(true, null));
+                        // [GỬI] Gửi gói CALL_ANSWER kèm cổng UDP của mình cho người gọi qua TLS (:9000)
                         Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_ANSWER)
                                 .put("callerId", callerId).put("udpPort", myPort)), null, null);
                     } catch (Exception ex) {
@@ -659,6 +696,7 @@ public class MainFrame extends JFrame {
                     }
                 },
                 () -> {
+                    // [GỬI] Người dùng bấm Từ chối -> gửi CALL_REJECT qua TLS (:9000)
                     Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_REJECT)
                             .put("callerId", callerId).put("reason", "Từ chối")), null, null);
                     endActiveCall(false, null);
@@ -666,11 +704,16 @@ public class MainFrame extends JFrame {
         activeCallDialog.setVisible(true);
     }
 
+    /**
+     * [PUSH -> UI] Phía người gọi nhận CALL_ANSWER (chứa {@code calleeIp} + {@code udpPort}):
+     * kích hoạt luồng âm thanh UDP 2 chiều tới người nghe và chuyển dialog sang trạng thái đang đàm thoại.
+     */
     private void handleCallAnswer(Packet p) {
         if (activeCallSession == null || activeCallDialog == null) return;
         String calleeIp = p.str("calleeIp");
         int calleePort = (int) p.num("udpPort");
         try {
+            // [CỔNG/GIAO THỨC] Bắt đầu luồng gửi/nhận UDP PCM tới địa chỉ người nghe
             activeCallSession.startAudio(calleeIp, calleePort);
             activeCallDialog.setConnected(activeCallSession);
         } catch (Exception ex) {
@@ -678,6 +721,7 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /** Kết thúc cuộc gọi hiện tại: tùy chọn [GỬI] gói {@code CALL_END} qua TLS, đóng UDP session và đóng dialog. */
     private void endActiveCall(boolean notifyPeer, String toastMsg) {
         long peer = activeCallPeerId;
         VoiceCallSession sess = activeCallSession;
@@ -686,6 +730,7 @@ public class MainFrame extends JFrame {
         activeCallSession = null;
         activeCallDialog = null;
         if (notifyPeer && peer > 0) {
+            // [GỬI] Báo server chuyển tiếp CALL_END cho đối phương qua TLS (:9000)
             Theme.runAsync(() -> conn.request(new Packet(PacketType.CALL_END).put("peerId", peer)), null, null);
         }
         if (sess != null) sess.close();
@@ -693,6 +738,7 @@ public class MainFrame extends JFrame {
         if (toastMsg != null && !toastMsg.isBlank()) showToast("📞 " + toastMsg);
     }
 
+    /** [PUSH -> UI] Nhận gói MSG_NEW: phát chuông, thêm bong bóng nếu đang mở đúng hội thoại, cập nhật preview & badge chưa đọc. */
     private void handleMsgNew(Packet p) {
         Message m = p.get("message", Message.class);
         if (m == null) return;
@@ -725,6 +771,7 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /** [PUSH -> UI] Nhận gói PRESENCE: cập nhật chấm xanh online/offline ở cột hội thoại, tab Bạn bè và header chat. */
     private void handlePresence(Packet p) {
         long userId = p.num("userId");
         boolean online = p.bool("online");
@@ -740,6 +787,7 @@ public class MainFrame extends JFrame {
         if (activeChat != null) activeChat.onPresence(userId, online);
     }
 
+    /** [PUSH -> UI] Nhận gói FRIEND_EVENT (lời mời/chấp nhận/hủy kết bạn): làm mới FriendPanel và hiện toast. */
     private void handleFriendEvent(Packet p) {
         friendPanel.refresh();
         String action = p.str("action");
@@ -754,6 +802,7 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /** [PUSH -> UI] Nhận gói CONV_UPDATE (đổi tên nhóm, bị xóa khỏi nhóm, thêm thành viên): đồng bộ lại danh sách hội thoại. */
     private void handleConvUpdate(Packet p) {
         boolean removed = p.bool("removed");
         long convId = p.num("convId");

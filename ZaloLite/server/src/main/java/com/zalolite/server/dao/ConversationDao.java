@@ -16,9 +16,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * [CSDL] Lớp DAO thao tác với hai bảng {@code conversations} và {@code members} trong PostgreSQL.
+ * Đảm nhận tạo/mở hội thoại 1-1, tạo Cloud cá nhân, tạo và quản lý nhóm chat (thêm/xóa thành viên,
+ * rời nhóm kèm chuyển quyền trưởng nhóm tự động, đổi tên nhóm, ghim hội thoại và cập nhật mốc đã đọc).
+ */
 public class ConversationDao {
+    /** Tên mặc định cho hộp lưu trữ cá nhân "Cloud của tôi" (mỗi user luôn có sẵn 1 hội thoại Cloud). */
     public static final String CLOUD_NAME = "☁️ Cloud của tôi";
 
+    /** [CSDL] Câu SELECT dùng chung gom đầy đủ thông tin hội thoại, đối phương 1-1, tin nhắn cuối (LATERAL) và số tin chưa đọc. */
     private static final String CONV_SELECT =
             "SELECT c.id, c.is_group, c.name, COALESCE(c.owner_id, 0) AS owner_id, c.avatar, m.pinned, "
                     + "EXTRACT(EPOCH FROM c.created_at) * 1000 AS conv_time, "
@@ -39,10 +46,12 @@ public class ConversationDao {
 
     private final Db db;
 
+    /** Khởi tạo ConversationDao với nguồn kết nối Db. */
     public ConversationDao(Db db) {
         this.db = db;
     }
 
+    /** [CSDL] Tìm hội thoại 1-1 sẵn có giữa u1 và u2; nếu chưa tồn tại thì tạo mới trong 1 transaction và thêm cả hai vào bảng members. */
     public Conversation openOrCreateDirect(long u1, long u2, SessionRegistry sessions) throws SQLException {
         String find = "SELECT c.id FROM conversations c "
                 + "JOIN members m1 ON m1.conv_id = c.id AND m1.user_id = ? "
@@ -86,6 +95,7 @@ public class ConversationDao {
         return findForUser(convId, u1, sessions);
     }
 
+    /** [CSDL] [XỬ LÝ] Tạo nhóm chat mới (yêu cầu >= 3 thành viên gồm trưởng nhóm) trong 1 transaction: thêm conversation, members và tin nhắn hệ thống đầu tiên. */
     public Conversation createGroup(long ownerId, String name, List<Long> memberIds, SessionRegistry sessions) throws SQLException {
         Set<Long> others = new LinkedHashSet<>();
         if (memberIds != null) {
@@ -140,6 +150,7 @@ public class ConversationDao {
         return findForUser(convId, ownerId, sessions);
     }
 
+    /** [CSDL] Truy vấn chi tiết 1 cuộc hội thoại dưới góc nhìn của userId (tính sẵn unreadCount, pinned và trạng thái peerOnline). */
     public Conversation findForUser(long convId, long userId, SessionRegistry sessions) throws SQLException {
         String sql = CONV_SELECT + "WHERE m.conv_id = ? AND m.user_id = ?";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -151,6 +162,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Đảm bảo người dùng luôn có sẵn 1 hội thoại "Cloud của tôi" được ghim sẵn trên đầu danh sách. */
     public long ensureCloudConversation(long userId) throws SQLException {
         String find = "SELECT c.id FROM conversations c "
                 + "JOIN members m ON m.conv_id = c.id AND m.user_id = ? "
@@ -191,6 +203,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Lấy toàn bộ danh sách hội thoại của userId, ưu tiên hội thoại đã ghim rồi sắp xếp theo thời điểm tin nhắn mới nhất. */
     public List<Conversation> listForUser(long userId, SessionRegistry sessions) throws SQLException {
         ensureCloudConversation(userId);
         String sql = CONV_SELECT
@@ -205,6 +218,7 @@ public class ConversationDao {
         return list;
     }
 
+    /** [CSDL] Lấy danh sách userId của mọi thành viên trong hội thoại (dùng để định tuyến push gói tin qua SessionRegistry). */
     public List<Long> getMemberIds(long convId) throws SQLException {
         List<Long> ids = new ArrayList<>();
         try (Connection c = db.open();
@@ -217,6 +231,7 @@ public class ConversationDao {
         return ids;
     }
 
+    /** [CSDL] Lấy danh sách chi tiết thành viên (User + role + lastReadMsgId + trạng thái online) của hội thoại, xếp OWNER lên đầu. */
     public List<Member> getMembers(long convId, SessionRegistry sessions) throws SQLException {
         String sql = "SELECT u.id, u.phone, u.name, u.email, u.avatar, m.role, m.last_read_msg_id "
                 + "FROM members m JOIN users u ON u.id = m.user_id WHERE m.conv_id = ? "
@@ -235,6 +250,7 @@ public class ConversationDao {
         return list;
     }
 
+    /** [CSDL] Kiểm tra userId có phải thành viên của hội thoại convId không (kiểm soát quyền đọc/gửi tin nhắn). */
     public boolean isMember(long convId, long userId) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement("SELECT 1 FROM members WHERE conv_id = ? AND user_id = ?")) {
@@ -246,6 +262,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Kiểm tra userId có phải trưởng nhóm (OWNER) của nhóm convId không (kiểm soát quyền quản trị nhóm). */
     public boolean isOwner(long convId, long userId) throws SQLException {
         String sql = "SELECT 1 FROM members m JOIN conversations c ON c.id = m.conv_id "
                 + "WHERE m.conv_id = ? AND m.user_id = ? AND m.role = 'OWNER' AND c.is_group = true";
@@ -258,6 +275,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Thêm thành viên mới vào nhóm với vai trò MEMBER (bỏ qua nếu đã tồn tại nhờ ON CONFLICT DO NOTHING). */
     public boolean addMember(long convId, long userId) throws SQLException {
         String sql = "INSERT INTO members(conv_id, user_id, role, joined_at) VALUES (?, ?, 'MEMBER', clock_timestamp()) "
                 + "ON CONFLICT (conv_id, user_id) DO NOTHING";
@@ -268,6 +286,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Xóa một thành viên khỏi bảng members của hội thoại. */
     public boolean removeMember(long convId, long userId) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement("DELETE FROM members WHERE conv_id = ? AND user_id = ?")) {
@@ -277,6 +296,10 @@ public class ConversationDao {
         }
     }
 
+    /**
+     * [CSDL] [XỬ LÝ] Rời nhóm trong 1 transaction: xóa user khỏi members; nếu người rời là OWNER thì tự động
+     * bàn giao quyền OWNER cho thành viên vào nhóm sớm nhất, hoặc xóa luôn nhóm nếu không còn ai.
+     */
     public boolean leaveGroup(long convId, long userId) throws SQLException {
         try (Connection c = db.open()) {
             c.setAutoCommit(false);
@@ -338,6 +361,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Đổi tên nhóm chat (chỉ áp dụng cho hội thoại is_group = true). */
     public boolean renameGroup(long convId, String newName) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement(
@@ -348,6 +372,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Bật/tắt trạng thái ghim (pinned) của một hội thoại riêng cho từng người dùng. */
     public boolean setPinned(long convId, long userId, boolean pinned) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement(
@@ -359,6 +384,7 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Cập nhật mốc ID tin nhắn đã đọc lớn nhất (GREATEST) cho userId trong hội thoại convId. */
     public void updateLastRead(long convId, long userId, long msgId) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement(
@@ -370,6 +396,7 @@ public class ConversationDao {
         }
     }
 
+    /** Ánh xạ dòng ResultSet từ CONV_SELECT thành DTO Conversation (tự phân biệt nhóm, Cloud, chat 1-1 và tóm tắt tin cuối). */
     private static Conversation mapConv(ResultSet rs, SessionRegistry sessions) throws SQLException {
         Conversation conv = new Conversation();
         conv.id = rs.getLong("id");
@@ -415,6 +442,7 @@ public class ConversationDao {
         return conv;
     }
 
+    /** Tạo chuỗi tóm tắt ngắn cho cột danh sách hội thoại khi tin nhắn cuối là ảnh/video/thoại/tệp. */
     private static String summarizeKind(String kind, String fileName) {
         if (kind == null) return "";
         return switch (kind) {

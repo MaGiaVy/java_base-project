@@ -15,7 +15,11 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * Hệ thống màu sắc, font (hỗ trợ emoji) và component bo tròn phong cách Berry Pop.
+ * Hệ thống giao diện chung (Design System) phong cách Berry Pop cho toàn bộ Swing UI:
+ *  - Bảng màu, font chữ UI và font hỗ trợ emoji (Segoe UI Emoji / Apple Color Emoji / Noto Color Emoji).
+ *  - Hàm tiện ích {@link #runAsync}: thực thi các lệnh mạng (TCP/TLS/UDP/HTTP) trên luồng nền {@link SwingWorker}
+ *    và trả kết quả về luồng giao diện EDT an toàn, không làm đơ cửa sổ.
+ *  - Các component tùy biến: {@link RoundedPanel}, {@link AvatarBadge} (kèm chấm xanh online), {@link PillLabel}.
  */
 public final class Theme {
     private Theme() {

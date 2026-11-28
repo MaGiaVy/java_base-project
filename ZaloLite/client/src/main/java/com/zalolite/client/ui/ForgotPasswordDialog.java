@@ -7,7 +7,12 @@ import com.zalolite.common.PacketType;
 import javax.swing.*;
 import java.awt.*;
 
-/** Hộp thoại quên mật khẩu và đặt lại qua mã OTP theo phong cách Berry Pop. */
+/**
+ * Hộp thoại quên mật khẩu và đặt lại mật khẩu qua mã OTP 6 chữ số.
+ * Quy trình 2 bước qua kết nối TLS tạm (:9000):
+ *  - Bước 1: gửi {@code OTP_REQUEST} (SĐT) -> server gửi OTP về email (hoặc in console nếu chưa cấu hình SMTP).
+ *  - Bước 2: gửi {@code OTP_RESET_PASSWORD} (SĐT + mã OTP + mật khẩu mới).
+ */
 public class ForgotPasswordDialog extends JDialog {
     public ForgotPasswordDialog(Frame owner, String serverAddress) {
         super(owner, "Quên mật khẩu — OTP", true);
@@ -59,6 +64,7 @@ public class ForgotPasswordDialog extends JDialog {
         step2.add(resetBtn);
         root.add(step2);
 
+        // [UI -> GỬI] Bấm nút "Gửi mã OTP": mở kết nối TLS tạm và gửi gói OTP_REQUEST
         sendOtpBtn.addActionListener(e -> {
             String phone = phoneField.getText().trim();
             if (phone.isEmpty()) {
@@ -67,6 +73,7 @@ public class ForgotPasswordDialog extends JDialog {
             }
             sendOtpBtn.setEnabled(false);
             otpStatus.setText(" ");
+            // [GỬI] Yêu cầu server sinh mã OTP và gửi về email đã đăng ký
             Theme.runAsync(() -> sendOnce(serverAddress, new Packet(PacketType.OTP_REQUEST)
                     .put("phone", phone)), res -> {
                 sendOtpBtn.setEnabled(true);
@@ -92,6 +99,7 @@ public class ForgotPasswordDialog extends JDialog {
             });
         });
 
+        // [UI -> GỬI] Bấm nút "Đặt lại mật khẩu": gửi gói OTP_RESET_PASSWORD kèm SĐT, mã OTP và mật khẩu mới
         resetBtn.addActionListener(e -> {
             String phone = phoneField.getText().trim();
             String code = otpField.getText().trim();
@@ -115,6 +123,7 @@ public class ForgotPasswordDialog extends JDialog {
             }
             resetBtn.setEnabled(false);
             resetStatus.setText(" ");
+            // [GỬI] Gửi mã OTP + mật khẩu mới qua TLS (:9000) để server xác thực và cập nhật mật khẩu
             Theme.runAsync(() -> sendOnce(serverAddress, new Packet(PacketType.OTP_RESET_PASSWORD)
                     .put("phone", phone)
                     .put("code", code)
@@ -140,6 +149,7 @@ public class ForgotPasswordDialog extends JDialog {
         setLocationRelativeTo(owner);
     }
 
+    /** [CỔNG/GIAO THỨC] Mở kết nối TLS tạm (:9000), gửi 1 gói tin yêu cầu rồi đóng ngay sau khi nhận phản hồi. */
     private static Packet sendOnce(String serverAddress, Packet packet) throws Exception {
         Object[] hp = LoginFrame.parseServer(serverAddress);
         Connection conn = new Connection((String) hp[0], (int) hp[1]);

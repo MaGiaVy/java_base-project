@@ -33,7 +33,15 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/** Khung chat chính: header, danh sách tin nhắn có phân trang & phân ngày, tìm kiếm, typing và composer. */
+/**
+ * Khung trò chuyện chính cho một cuộc hội thoại (chat 1-1, nhóm chat, hoặc Cloud của tôi):
+ *  - Header: avatar + trạng thái online, nút gọi thoại UDP 1-1, thanh tìm kiếm tin nhắn ({@code MSG_SEARCH}), quản lý nhóm.
+ *  - Danh sách tin nhắn: phân trang lịch sử ({@code MSG_HISTORY}), chia mốc ngày, bong bóng {@link MessageBubble}.
+ *  - Khung soạn tin (Composer): gửi text ({@code MSG_SEND}), emoji, gửi ảnh/file/video/voice ưu tiên P2P trực tiếp
+ *    ({@link P2pTransfer}) rồi tự fallback sang FileServer TCP :9001 ({@link FileTransfer}), kéo-thả file (Drag & Drop),
+ *    dán ảnh clipboard ({@code Ctrl+V}), trả lời (Reply), chuyển tiếp (Forward), thả cảm xúc (Reaction), thu hồi (Recall),
+ *    báo đang gõ ({@code TYPING}) và đánh dấu đã xem ({@code MSG_SEEN}).
+ */
 public class ChatPanel extends JPanel {
     private static final int PAGE_SIZE = 30;
 
@@ -140,6 +148,7 @@ public class ChatPanel extends JPanel {
             headerActions.add(p2pPill);
         }
 
+        // [UI -> GỬI] Nút gọi thoại 1-1 (chỉ hiện với chat trực tiếp): gọi callback MainFrame.startOutgoingCall()
         if (!conv.isGroup && !conv.isCloud && onStartCall != null) {
             JButton callBtn = iconButton("📞", "Gọi thoại 1-1 realtime (UDP)");
             callBtn.addActionListener(e -> onStartCall.run());
@@ -295,7 +304,7 @@ public class ChatPanel extends JPanel {
         typingStopTimer = new Timer(2500, e -> sendTypingState(false));
         typingStopTimer.setRepeats(false);
 
-        // Events
+        // [UI -> GỬI] Gắn sự kiện nút Gửi / phím Enter -> sendMessage(); gõ chữ -> phát gói TYPING
         sendBtn.addActionListener(e -> sendMessage());
         inputField.addActionListener(e -> sendMessage());
         inputField.getDocument().addDocumentListener(new DocumentListener() {
@@ -307,6 +316,7 @@ public class ChatPanel extends JPanel {
             public void changedUpdate(DocumentEvent e) { onInputChanged(); }
         });
 
+        // Kích hoạt kéo-thả file (Drag & Drop) và dán ảnh từ clipboard (Ctrl+V), sau đó tải 30 tin gần nhất
         installDragAndDrop();
         installClipboardImagePaste();
         loadInitialHistory();
@@ -393,10 +403,12 @@ public class ChatPanel extends JPanel {
         revalidate();
     }
 
+    /** [UI -> GỬI] Tìm kiếm tin nhắn trong hội thoại hiện tại bằng gói MSG_SEARCH qua TLS (:9000). */
     private void runSearch() {
         String q = searchField.getText().trim();
         if (q.isEmpty()) return;
         Theme.runAsync(
+                // [GỬI] Gửi từ khóa tìm kiếm lên server
                 () -> conn.request(new Packet(PacketType.MSG_SEARCH)
                         .put("convId", conv.id).put("query", q)),
                 res -> {
@@ -457,10 +469,12 @@ public class ChatPanel extends JPanel {
 
     // --- Lịch sử & render tin nhắn ---
 
+    /** [UI -> GỬI] Tải trang lịch sử tin nhắn mới nhất (MSG_HISTORY, tối đa 30 tin) khi mở hội thoại. */
     private void loadInitialHistory() {
         if (loadingHistory) return;
         loadingHistory = true;
         Theme.runAsync(
+                // [GỬI] Yêu cầu 30 tin nhắn gần nhất qua TLS (:9000)
                 () -> conn.request(new Packet(PacketType.MSG_HISTORY)
                         .put("convId", conv.id).put("limit", PAGE_SIZE)),
                 res -> {
@@ -478,6 +492,7 @@ public class ChatPanel extends JPanel {
         );
     }
 
+    /** [UI -> GỬI] Bấm "Tải thêm tin cũ": gửi MSG_HISTORY kèm beforeId để nạp thêm 30 tin cũ hơn. */
     private void loadOlderHistory() {
         if (loadingHistory || messages.isEmpty()) return;
         loadingHistory = true;
@@ -487,6 +502,7 @@ public class ChatPanel extends JPanel {
         int oldVal = scrollPane.getVerticalScrollBar().getValue();
 
         Theme.runAsync(
+                // [GỬI] Yêu cầu phân trang lịch sử trước oldestId qua TLS (:9000)
                 () -> conn.request(new Packet(PacketType.MSG_HISTORY)
                         .put("convId", conv.id)
                         .put("beforeId", oldestId)
@@ -588,6 +604,7 @@ public class ChatPanel extends JPanel {
 
     // --- Gửi tin, cảm xúc, thu hồi, đã xem, đang gõ ---
 
+    /** [UI -> GỬI] Bấm nút "Gửi" hoặc nhấn Enter: gửi tin nhắn văn bản (MSG_SEND, có thể kèm replyTo) qua TLS (:9000). */
     private void sendMessage() {
         String text = inputField.getText().trim();
         if (text.isEmpty()) return;
@@ -600,6 +617,7 @@ public class ChatPanel extends JPanel {
 
         Theme.runAsync(
                 () -> {
+                    // [GỬI] Đóng gói MSG_SEND (kind=TEXT) gửi lên server qua kênh TLS (:9000)
                     Packet req = new Packet(PacketType.MSG_SEND)
                             .put("convId", conv.id)
                             .put("kind", Message.KIND_TEXT)
@@ -714,6 +732,13 @@ public class ChatPanel extends JPanel {
         SwingUtilities.invokeLater(() -> transferBar.setVisible(false));
     }
 
+    /**
+     * [UI -> GỬI] Quy trình gửi file/ảnh/video/voice lai (Hybrid P2P -> Server fallback):
+     *  1) Nếu là chat 1-1 (không phải nhóm/Cloud): hỏi server {@code P2P_LOOKUP} để lấy IP + cổng P2P đối phương,
+     *     thử truyền thẳng qua {@link P2pTransfer#sendDirect} (timeout 1.5s).
+     *  2) Nếu đối phương offline hoặc tường lửa chặn: tự động fallback tải lên FileServer TCP :9001 qua {@link FileTransfer#upload}.
+     *  3) Cuối cùng gửi gói metadata {@code MSG_SEND} qua TLS (:9000) kèm nhãn {@code transport} ("P2P" hoặc "SERVER").
+     */
     private void sendMediaFile(File file, String kind, int durationSec) {
         if (file == null || !file.isFile()) return;
         if (file.length() > FileTransfer.MAX_FILE_SIZE) {
@@ -725,14 +750,16 @@ public class ChatPanel extends JPanel {
             String transport = "SERVER";
             String filePath = null;
 
-            // 1. Ưu tiên P2P trực tiếp cho chat 1-1 (bỏ qua Cloud của tôi)
+            // 1. [GỬI] Ưu tiên P2P trực tiếp cho chat 1-1 (bỏ qua Cloud của tôi)
             if (!conv.isGroup && !conv.isCloud && conv.peerId > 0) {
                 try {
+                    // Hỏi server IP + cổng P2P đang lắng nghe của đối phương
                     Packet lk = conn.request(new Packet(PacketType.P2P_LOOKUP).put("userId", conv.peerId));
                     if (lk.isOk() && lk.bool("online")) {
                         String ip = lk.str("ip");
                         int port = (int) lk.num("port");
                         if (ip != null && port > 0) {
+                            // [CỔNG/GIAO THỨC] Truyền file TCP trực tiếp tới ip:port P2P của đối phương
                             P2pTransfer.sendDirect(ip, port, conv.id, me.id, kind, file, durationSec,
                                     (d, t) -> showProgress("⚡ P2P: " + file.getName(), d, t));
                             transport = "P2P";
@@ -744,7 +771,7 @@ public class ChatPanel extends JPanel {
                 }
             }
 
-            // 2. Fallback qua FileServer cổng 9001
+            // 2. [GỬI] Fallback tải file lên FileServer TCP cổng 9001
             if (filePath == null) {
                 transport = "SERVER";
                 filePath = FileTransfer.upload(conn.getHost(), conn.getFilePort(), file,
@@ -754,6 +781,7 @@ public class ChatPanel extends JPanel {
                 localMediaFiles.put(filePath, file);
             }
 
+            // 3. [GỬI] Gửi gói tin metadata MSG_SEND qua kênh TLS (:9000) để lưu lịch sử và thông báo người nhận
             Packet req = new Packet(PacketType.MSG_SEND)
                     .put("convId", conv.id)
                     .put("kind", kind)
@@ -781,6 +809,10 @@ public class ChatPanel extends JPanel {
         });
     }
 
+    /**
+     * [NHẬN] Tìm file đính kèm theo thứ tự: cache RAM/P2P cục bộ -> cache đĩa tạm -> tải từ FileServer TCP :9001
+     * ({@link FileTransfer#download}) rồi trả về {@link MessageBubble} để hiển thị ảnh / mở file / phát âm thanh.
+     */
     private void resolveMediaFile(Message m, Consumer<File> onReady) {
         if (m == null || m.filePath == null || m.filePath.isBlank()) {
             onReady.accept(null);
@@ -835,6 +867,7 @@ public class ChatPanel extends JPanel {
         revalidate();
     }
 
+    /** [UI -> GỬI] Chuyển tiếp tin nhắn sang hội thoại khác (gửi MSG_SEND với cờ forwarded=true; nếu là file P2P thì upload lên FileServer trước). */
     private void forwardMessage(Message m) {
         if (conversationsSupplier == null) return;
         List<Conversation> list = conversationsSupplier.get();
@@ -885,6 +918,7 @@ public class ChatPanel extends JPanel {
         );
     }
 
+    /** [UI -> GỬI] Cài đặt kéo-thả file (Drag & Drop) vào khung chat để tự phân loại ảnh/video/wav/file và gửi đi. */
     private void installDragAndDrop() {
         TransferHandler handler = new TransferHandler() {
             @Override
@@ -928,6 +962,7 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /** [UI -> GỬI] Bắt tổ hợp phím Ctrl+V trên ô nhập tin: nếu clipboard chứa ảnh chụp màn hình thì lưu tạm .png và gửi đi. */
     private void installClipboardImagePaste() {
         KeyStroke pasteKey = KeyStroke.getKeyStroke(KeyEvent.VK_V, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
         Action defaultPaste = inputField.getActionMap().get("paste-from-clipboard");
@@ -957,8 +992,10 @@ public class ChatPanel extends JPanel {
         });
     }
 
+    /** [UI -> GỬI] Thả biểu tượng cảm xúc lên tin nhắn (MSG_REACT) qua TLS (:9000). */
     private void sendReact(Message m, String emoji) {
         Theme.runAsync(
+                // [GỬI] Gửi gói MSG_REACT kèm msgId và emoji
                 () -> conn.request(new Packet(PacketType.MSG_REACT)
                         .put("msgId", m.id).put("emoji", emoji)),
                 res -> {
@@ -971,11 +1008,13 @@ public class ChatPanel extends JPanel {
         );
     }
 
+    /** [UI -> GỬI] Thu hồi tin nhắn đã gửi (MSG_RECALL) qua TLS (:9000). */
     private void sendRecall(Message m) {
         int ok = JOptionPane.showConfirmDialog(this,
                 "Thu hồi tin nhắn này cho mọi người?", "Thu hồi tin nhắn", JOptionPane.YES_NO_OPTION);
         if (ok != JOptionPane.YES_OPTION) return;
         Theme.runAsync(
+                // [GỬI] Gửi gói MSG_RECALL yêu cầu server thu hồi tin nhắn
                 () -> conn.request(new Packet(PacketType.MSG_RECALL).put("msgId", m.id)),
                 res -> {
                     if (res.isOk()) {
@@ -994,6 +1033,7 @@ public class ChatPanel extends JPanel {
         sendSeen(newestId);
     }
 
+    /** [GỬI] Báo đã xem tới tin nhắn {@code lastReadMsgId} (gói fire-and-forget MSG_SEEN qua TLS :9000). */
     private void sendSeen(long lastReadMsgId) {
         Theme.runAsync(() -> {
             conn.send(new Packet(PacketType.MSG_SEEN)
@@ -1018,6 +1058,7 @@ public class ChatPanel extends JPanel {
         typingStopTimer.restart();
     }
 
+    /** [UI -> GỬI] Phát trạng thái đang gõ phím (gói TYPING qua TLS :9000), có debounce 2 giây. */
     private void sendTypingState(boolean typing) {
         if (!typing && !sentTypingTrue) return;
         sentTypingTrue = typing;
@@ -1029,8 +1070,9 @@ public class ChatPanel extends JPanel {
         }, null, null);
     }
 
-    // --- Sự kiện đẩy từ Server (đã chạy trên EDT) ---
+    // --- [PUSH -> UI] Các hàm nhận sự kiện đẩy từ MainFrame.onPush() (đã chạy trên EDT) ---
 
+    /** [PUSH -> UI] Thêm tin nhắn mới (MSG_NEW) vào cuối khung chat và tự động gửi MSG_SEEN nếu là tin của người khác. */
     public void onNewMessage(Message m) {
         appendMessageToView(m);
         if (m.senderId != me.id) {
@@ -1038,16 +1080,19 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /** [PUSH -> UI] Đánh dấu bong bóng đã thu hồi khi nhận MSG_RECALLED. */
     public void onMessageRecalled(long msgId) {
         MessageBubble b = bubblesById.get(msgId);
         if (b != null) b.markRecalled();
     }
 
+    /** [PUSH -> UI] Cập nhật biểu tượng cảm xúc trên bong bóng khi nhận MSG_REACTED. */
     public void onMessageReacted(long msgId, long userId, String emoji) {
         MessageBubble b = bubblesById.get(msgId);
         if (b != null) b.applyReaction(userId, emoji);
     }
 
+    /** [PUSH -> UI] Hiển thị hoặc ẩn dòng "... đang soạn tin..." khi nhận gói TYPING. */
     public void onTyping(long userId, String userName, boolean typing) {
         if (userId == me.id) return;
         if (typing) {
@@ -1060,6 +1105,7 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /** [PUSH -> UI] Cập nhật nhãn "Đã xem" cho các tin của mình khi đối phương/thành viên nhóm gửi SEEN_UPDATE. */
     public void onSeenUpdate(long userId, long lastReadMsgId) {
         if (userId == me.id) return;
         seenByUser.merge(userId, lastReadMsgId, Math::max);
@@ -1075,6 +1121,7 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /** [PUSH -> UI] Đổi trạng thái tin nhắn sang "✓✓ Đã nhận" khi nhận MSG_DELIVERED. */
     public void onDelivered(long msgId) {
         MessageBubble b = bubblesById.get(msgId);
         if (b != null && !Message.STATE_SEEN.equals(b.getMessage().deliveryState)) {
@@ -1082,6 +1129,7 @@ public class ChatPanel extends JPanel {
         }
     }
 
+    /** [PUSH -> UI] Cập nhật chấm xanh online và dòng trạng thái trên header khi nhận PRESENCE. */
     public void onPresence(long userId, boolean online) {
         if (!conv.isGroup && conv.peerId == userId) {
             conv.peerOnline = online;

@@ -10,7 +10,13 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.List;
 
-/** Màn hình đăng nhập phong cách Berry Pop. */
+/**
+ * Màn hình đăng nhập chính của ZaloLite Client.
+ * Hỗ trợ:
+ *  - Nhập địa chỉ server (mặc định localhost:9000) hoặc bấm nút "LAN" để dò server qua UDP ({@link LanDiscovery}).
+ *  - Đăng nhập qua TLS ({@code LOGIN}), mở {@link MainFrame} khi thành công.
+ *  - Mở hộp thoại đăng ký ({@link RegisterDialog}) và quên mật khẩu OTP ({@link ForgotPasswordDialog}).
+ */
 public class LoginFrame extends JFrame {
     private final JTextField serverField = new JTextField("localhost:9000");
     private final JTextField phoneField = new JTextField();
@@ -102,6 +108,7 @@ public class LoginFrame extends JFrame {
         root.add(card);
         setContentPane(root);
 
+        // [UI -> GỬI] Gắn sự kiện nút Đăng nhập, phím Enter ở ô mật khẩu, nút dò server LAN và các hộp thoại phụ
         loginBtn.addActionListener(e -> doLogin());
         passField.addActionListener(e -> doLogin());
         lanBtn.addActionListener(e -> discoverLan());
@@ -109,11 +116,13 @@ public class LoginFrame extends JFrame {
         forgotBtn.addActionListener(e -> new ForgotPasswordDialog(this, serverField.getText()).setVisible(true));
     }
 
+    /** [UI -> GỬI] Bấm nút "LAN": phát gói UDP thăm dò cổng 9009 qua {@link LanDiscovery} để tự điền host:port. */
     private void discoverLan() {
         lanBtn.setEnabled(false);
         status.setForeground(Theme.TEXT_MUTED);
         status.setText("Đang tìm máy chủ trong LAN...");
         Theme.runAsync(
+                // [CỔNG/GIAO THỨC] Dò server qua UDP Multicast/Broadcast cổng 9009 trong 1.5 giây
                 () -> LanDiscovery.discover(1500),
                 found -> {
                     lanBtn.setEnabled(true);
@@ -150,6 +159,7 @@ public class LoginFrame extends JFrame {
         return new Object[]{s.substring(0, i), Integer.parseInt(s.substring(i + 1))};
     }
 
+    /** [UI -> GỬI] Xử lý đăng nhập: mở kết nối TLS (:9000), gửi gói LOGIN và mở {@link MainFrame} khi hợp lệ. */
     private void doLogin() {
         String phone = phoneField.getText().trim();
         String pass = new String(passField.getPassword());
@@ -164,8 +174,10 @@ public class LoginFrame extends JFrame {
         Theme.runAsync(() -> {
             Object[] hp = parseServer(server);
             int tcpPort = (int) hp[1];
+            // [CỔNG/GIAO THỨC] Mở SSLSocket tới cổng điều khiển (mặc định :9000) và ghi nhớ cổng FileServer (:9001)
             Connection conn = new Connection((String) hp[0], tcpPort, fPort > 0 ? fPort : tcpPort + 1);
             try {
+                // [GỬI] Gửi gói LOGIN (phone + password) qua kênh TLS và chờ phản hồi
                 Packet res = conn.request(new Packet(PacketType.LOGIN).put("phone", phone).put("password", pass));
                 if (!res.isOk()) {
                     conn.close();

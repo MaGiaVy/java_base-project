@@ -11,14 +11,20 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * [CSDL] Lớp DAO thao tác với bảng {@code users} trong PostgreSQL.
+ * Đảm nhận đăng ký tài khoản, xác thực đăng nhập, tìm kiếm người dùng, cập nhật hồ sơ, đổi/đặt lại mật khẩu.
+ * Bảo mật: mọi mật khẩu đều được băm bằng BCrypt (có salt ngẫu nhiên) trước khi lưu và xác minh bằng BCrypt.checkpw().
+ */
 public class UserDao {
     private final Db db;
 
+    /** Khởi tạo UserDao với nguồn kết nối Db. */
     public UserDao(Db db) {
         this.db = db;
     }
 
-    /** Trả về user mới, hoặc null nếu số điện thoại đã được đăng ký. */
+    /** [CSDL] [XỬ LÝ] Băm mật khẩu bằng BCrypt rồi INSERT vào bảng users; trả về User mới hoặc null nếu số điện thoại đã tồn tại (ON CONFLICT DO NOTHING). */
     public User register(String phone, String name, String email, String password) throws SQLException {
         String hash = BCrypt.hashpw(password, BCrypt.gensalt());
         String sql = "INSERT INTO users(phone, name, email, pass_hash) VALUES (?,?,?,?) "
@@ -34,7 +40,7 @@ public class UserDao {
         }
     }
 
-    /** Trả về user nếu đúng mật khẩu, ngược lại null. */
+    /** [CSDL] [XỬ LÝ] Truy vấn user theo số điện thoại và so khớp mật khẩu bằng BCrypt.checkpw(); trả về User nếu hợp lệ, ngược lại null. */
     public User login(String phone, String password) throws SQLException {
         String sql = "SELECT id, phone, name, email, avatar, pass_hash FROM users WHERE phone = ?";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -46,6 +52,7 @@ public class UserDao {
         }
     }
 
+    /** [CSDL] Tìm thông tin công khai của user theo số điện thoại (dùng trong luồng quên mật khẩu OTP). */
     public User findByPhone(String phone) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement("SELECT id, phone, name, email, avatar FROM users WHERE phone = ?")) {
@@ -56,6 +63,7 @@ public class UserDao {
         }
     }
 
+    /** [CSDL] Tìm thông tin công khai của user theo khóa chính id. */
     public User findById(long id) throws SQLException {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement("SELECT id, phone, name, email, avatar FROM users WHERE id = ?")) {
@@ -66,6 +74,7 @@ public class UserDao {
         }
     }
 
+    /** [CSDL] Tìm kiếm tối đa 20 người dùng theo số điện thoại hoặc tên (ILIKE không phân biệt hoa thường), loại trừ chính người tìm. */
     public List<User> search(String query, long excludeUserId) throws SQLException {
         if (query == null || query.isBlank()) return List.of();
         String sql = "SELECT id, phone, name, email, avatar FROM users "
@@ -83,6 +92,7 @@ public class UserDao {
         return list;
     }
 
+    /** [CSDL] Cập nhật tên hiển thị và email của user theo id, trả về bản ghi User mới nhất qua RETURNING. */
     public User updateProfile(long id, String name, String email) throws SQLException {
         String sql = "UPDATE users SET name = ?, email = ? WHERE id = ? RETURNING id, phone, name, email, avatar";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -95,6 +105,7 @@ public class UserDao {
         }
     }
 
+    /** [CSDL] [XỬ LÝ] Đổi mật khẩu: đọc pass_hash hiện tại, kiểm tra mật khẩu cũ bằng BCrypt.checkpw() rồi cập nhật hash mới. */
     public boolean changePassword(long userId, String oldPassword, String newPassword) throws SQLException {
         if (oldPassword == null || newPassword == null) return false;
         try (Connection c = db.open()) {
@@ -115,6 +126,7 @@ public class UserDao {
         }
     }
 
+    /** [CSDL] [XỬ LÝ] Đặt lại mật khẩu mới (băm BCrypt) theo email sau khi đã xác thực thành công mã OTP. */
     public boolean resetPasswordByEmail(String email, String newPassword) throws SQLException {
         if (email == null || email.isBlank() || newPassword == null) return false;
         try (Connection c = db.open();
@@ -125,6 +137,7 @@ public class UserDao {
         }
     }
 
+    /** Ánh xạ một dòng ResultSet thành DTO User (chỉ gồm thông tin công khai). */
     static User map(ResultSet rs) throws SQLException {
         return new User(rs.getLong("id"), rs.getString("phone"), rs.getString("name"),
                 rs.getString("email"), rs.getString("avatar"));

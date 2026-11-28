@@ -17,10 +17,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * Pure UDP realtime 1-1 PCM voice call session (16kHz, 16-bit, mono, 20ms frames).
+ * [CỔNG/GIAO THỨC] Phiên gọi thoại 1-1 thời gian thực qua UDP thuần (không qua server trung chuyển âm thanh).
+ * - Tín hiệu điều khiển (CALL_OFFER / CALL_ACCEPT / CALL_END) đi qua kênh TLS (:9000) để trao đổi IP + cổng UDP.
+ * - Dữ liệu âm thanh PCM thô (16kHz, 16-bit, mono, mỗi khung 20ms = 640 byte) truyền trực tiếp giữa 2 client
+ *   bằng {@link DatagramSocket}(0) trên cổng UDP ngẫu nhiên để giảm tối đa độ trễ.
  */
 public final class VoiceCallSession implements AutoCloseable {
+    /** Định dạng âm thanh PCM: 16kHz, 16-bit signed little-endian, 1 kênh mono. */
     public static final AudioFormat AUDIO_FORMAT = new AudioFormat(16000f, 16, 1, true, false);
+    /** Kích thước mỗi khung âm thanh 20ms: 16000 mẫu/s * 2 byte * 0.02s = 640 byte. */
     public static final int FRAME_BYTES = 640;
     private static final int RECV_TIMEOUT_MS = 500;
 
@@ -33,11 +38,13 @@ public final class VoiceCallSession implements AutoCloseable {
     private volatile SourceDataLine speakerLine;
     private volatile Consumer<byte[]> onFrameReceived;
 
+    /** [CỔNG/GIAO THỨC] Tạo DatagramSocket trên cổng UDP ngẫu nhiên (0) để gửi/nhận âm thanh P2P. */
     public VoiceCallSession() throws SocketException {
         this.socket = new DatagramSocket(0);
         this.socket.setSoTimeout(RECV_TIMEOUT_MS);
     }
 
+    /** Trả về cổng UDP cục bộ (được gửi kèm trong CALL_OFFER / CALL_ACCEPT qua kênh TLS). */
     public int getLocalPort() {
         return socket.getLocalPort();
     }
@@ -58,6 +65,11 @@ public final class VoiceCallSession implements AutoCloseable {
         this.onFrameReceived = onFrameReceived;
     }
 
+    /**
+     * Bắt đầu luồng âm thanh 2 chiều (full-duplex) tới {@code peerIp:peerPort}:
+     *  - Luồng "voice-capture": thu mic -> gửi gói UDP PCM 640 byte
+     *  - Luồng "voice-receive": nhận gói UDP PCM -> phát ra loa
+     */
     public void startAudio(String peerIp, int peerPort) throws IOException {
         if (closed.get()) throw new IOException("VoiceCallSession is already closed");
         InetAddress peerAddr = InetAddress.getByName(peerIp);
@@ -72,6 +84,7 @@ public final class VoiceCallSession implements AutoCloseable {
         receiveThread.start();
     }
 
+    /** Chế độ chỉ nhận UDP (không mở loa/mic, dùng cho test tự động hoặc máy không có audio). */
     public void startReceiveOnly(Consumer<byte[]> onFrameReceived) {
         this.onFrameReceived = onFrameReceived;
         if (closed.get() || !running.compareAndSet(false, true)) return;
@@ -80,6 +93,7 @@ public final class VoiceCallSession implements AutoCloseable {
         receiveThread.start();
     }
 
+    /** [GỬI] Gửi trực tiếp 1 khung byte PCM qua UDP tới {@code peerIp:peerPort}. */
     public void sendRawFrame(String peerIp, int peerPort, byte[] pcm) throws IOException {
         if (closed.get()) throw new IOException("VoiceCallSession is closed");
         InetAddress peerAddr = InetAddress.getByName(peerIp);
@@ -87,6 +101,7 @@ public final class VoiceCallSession implements AutoCloseable {
         socket.send(packet);
     }
 
+    /** [GỬI] Vòng lặp thu âm từ micro (TargetDataLine) và bắn từng khung PCM 640 byte qua UDP tới peer. */
     private void runCaptureLoop(InetAddress peerAddr, int peerPort) {
         TargetDataLine mic = null;
         try {
@@ -100,6 +115,7 @@ public final class VoiceCallSession implements AutoCloseable {
             while (running.get() && !socket.isClosed()) {
                 int read = mic.read(buf, 0, buf.length);
                 if (read > 0 && !muted.get()) {
+                    // [GỬI] Đóng gói khung PCM vào DatagramPacket và gửi thẳng tới IP:port UDP của đối phương
                     DatagramPacket packet = new DatagramPacket(buf, read, peerAddr, peerPort);
                     socket.send(packet);
                 }
@@ -107,13 +123,14 @@ public final class VoiceCallSession implements AutoCloseable {
         } catch (LineUnavailableException | IllegalArgumentException e) {
             System.err.println("[VoiceCall] Microphone unavailable, continuing receive-only: " + e.getMessage());
         } catch (IOException ignored) {
-            // Expected on shutdown when socket closes
+            // Bình thường khi cuộc gọi kết thúc và socket bị đóng
         } finally {
             closeLine(mic);
             this.micLine = null;
         }
     }
 
+    /** [NHẬN] Vòng lặp nhận gói UDP PCM từ đối phương và phát trực tiếp ra loa (SourceDataLine). */
     private void runReceiveLoop(boolean useSpeaker) {
         SourceDataLine speaker = null;
         try {
@@ -134,6 +151,7 @@ public final class VoiceCallSession implements AutoCloseable {
             while (running.get() && !socket.isClosed()) {
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 try {
+                    // [NHẬN] Đọc 1 gói âm thanh PCM từ DatagramSocket (timeout 500ms để kiểm tra cờ running)
                     socket.receive(packet);
                 } catch (SocketTimeoutException timeout) {
                     continue;
@@ -141,6 +159,7 @@ public final class VoiceCallSession implements AutoCloseable {
                 int len = packet.getLength();
                 if (len <= 0) continue;
                 if (speaker != null) {
+                    // Phát khung âm thanh nhận được ra loa ngay lập tức
                     speaker.write(packet.getData(), packet.getOffset(), len);
                 }
                 Consumer<byte[]> listener = this.onFrameReceived;
@@ -150,7 +169,7 @@ public final class VoiceCallSession implements AutoCloseable {
                 }
             }
         } catch (IOException ignored) {
-            // Expected on shutdown when socket closes
+            // Bình thường khi cuộc gọi kết thúc và socket bị đóng
         } finally {
             closeLine(speaker);
             this.speakerLine = null;
@@ -169,6 +188,7 @@ public final class VoiceCallSession implements AutoCloseable {
         }
     }
 
+    /** Kết thúc phiên gọi thoại: dừng luồng, đóng DatagramSocket, đóng micro và loa. */
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) return;

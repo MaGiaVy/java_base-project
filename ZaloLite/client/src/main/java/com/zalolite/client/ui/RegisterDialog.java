@@ -7,7 +7,10 @@ import com.zalolite.common.PacketType;
 import javax.swing.*;
 import java.awt.*;
 
-/** Hộp thoại đăng ký tài khoản mới theo phong cách Berry Pop. */
+/**
+ * Hộp thoại đăng ký tài khoản mới.
+ * Mở kết nối TLS tạm tới server (:9000), gửi gói {@code REGISTER} và đóng kết nối sau khi nhận phản hồi.
+ */
 public class RegisterDialog extends JDialog {
     public RegisterDialog(Frame owner, String server) {
         super(owner, "ZaloLite Berry - Tạo tài khoản", true);
@@ -47,6 +50,7 @@ public class RegisterDialog extends JDialog {
         setSize(380, getHeight() + 12);
         setLocationRelativeTo(owner);
 
+        // [UI -> GỬI] Bấm nút "Đăng ký": mở kết nối TLS tạm (:9000) và gửi gói REGISTER chứa SĐT, tên, email, mật khẩu
         ok.addActionListener(e -> {
             String p1 = new String(pass.getPassword());
             if (!p1.equals(new String(pass2.getPassword()))) {
@@ -57,8 +61,10 @@ public class RegisterDialog extends JDialog {
             status.setText(" ");
             Theme.runAsync(() -> {
                 Object[] hp = LoginFrame.parseServer(server);
+                // [CỔNG/GIAO THỨC] Tạo SSLSocket kết nối tạm tới cổng điều khiển server (mặc định :9000)
                 Connection conn = new Connection((String) hp[0], (int) hp[1]);
                 try {
+                    // [GỬI] Gửi yêu cầu REGISTER và chờ server xác nhận
                     return conn.request(new Packet(PacketType.REGISTER)
                             .put("phone", phone.getText().trim())
                             .put("name", name.getText().trim())

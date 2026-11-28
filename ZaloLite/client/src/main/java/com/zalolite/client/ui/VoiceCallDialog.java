@@ -9,7 +9,9 @@ import java.awt.event.WindowEvent;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Berry Pop non-modal 1-1 voice call dialog (outgoing, incoming, active).
+ * Hộp thoại cuộc gọi thoại 1-1 không chặn cửa sổ chính (modeless), hỗ trợ 3 trạng thái:
+ * cuộc gọi đi (outgoing), cuộc gọi đến (incoming), và đang đàm thoại (active với đồng hồ đếm giờ + nút tắt/bật mic).
+ * Điều khiển phiên âm thanh UDP {@link VoiceCallSession} và gọi callback về {@link MainFrame} để gửi tín hiệu CALL_ACCEPT / CALL_END.
  */
 public final class VoiceCallDialog extends JDialog {
     private final JLabel statusLabel;
@@ -85,6 +87,7 @@ public final class VoiceCallDialog extends JDialog {
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 16));
         actions.setOpaque(false);
 
+        // [UI -> GỬI] Bấm "Nghe máy": gọi callback để MainFrame mở VoiceCallSession UDP và gửi CALL_ACCEPT qua TLS
         acceptBtn = Theme.primaryButton("📞 Nghe máy");
         acceptBtn.setFont(Theme.emojiFont(Font.BOLD, 13f));
         acceptBtn.setBackground(Theme.ONLINE_GREEN);
@@ -95,11 +98,13 @@ public final class VoiceCallDialog extends JDialog {
             if (onAccept != null) onAccept.run();
         });
 
+        // Nút bật/tắt micro cục bộ trong phiên VoiceCallSession
         muteBtn = Theme.softButton("🎤 Tắt mic");
         muteBtn.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
         muteBtn.setVisible(false);
         muteBtn.addActionListener(e -> toggleMute());
 
+        // [UI -> GỬI] Bấm "Từ chối" / "Cúp máy": đóng phiên UDP và gọi callback gửi CALL_END qua TLS
         hangupBtn = Theme.primaryButton(incoming ? "📞 Từ chối" : "📞 Cúp máy");
         hangupBtn.setFont(Theme.emojiFont(Font.BOLD, 13f));
         hangupBtn.setBackground(Theme.PRIMARY_RED);
@@ -134,6 +139,7 @@ public final class VoiceCallDialog extends JDialog {
         setConnected(session);
     }
 
+    /** [PUSH -> UI] Chuyển giao diện sang trạng thái đang đàm thoại (khi nhận CALL_ACCEPT hoặc vừa chấp nhận) và chạy đồng hồ. */
     public void setConnected(VoiceCallSession session) {
         runOnEdt(() -> {
             this.session = session;
@@ -158,6 +164,7 @@ public final class VoiceCallDialog extends JDialog {
         });
     }
 
+    /** [PUSH -> UI] Kết thúc cuộc gọi từ phía đối phương/server (CALL_END), đóng phiên UDP và tự ẩn hộp thoại. */
     public void endCall(String statusText) {
         runOnEdt(() -> {
             endCallbackFired.set(true);

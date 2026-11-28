@@ -1,10 +1,12 @@
 package com.zalolite.common;
 
 /**
- * Hợp đồng tên gói tin dùng chung giữa Server và Client.
- * Dùng String hằng để thêm loại mới không phải sửa enum.
+ * [CỔNG/GIAO THỨC] Bảng hằng tên loại gói tin (protocol contract) dùng chung giữa Server và Client qua kênh TCP/TLS (cổng 9000).
+ * Dùng hằng String thay vì enum để dễ mở rộng tính năng mà không gây lỗi tương thích khi parse JSON.
+ * Các gói có chú thích "push" là sự kiện Server chủ động đẩy xuống Client (không có reqId).
  */
 public final class PacketType {
+    /** Ngăn khởi tạo instance cho lớp chứa hằng giao thức. */
     private PacketType() {
     }
 
