@@ -31,7 +31,7 @@ public class EmojiPicker extends JPopupMenu {
         grid.setBackground(Color.WHITE);
         for (String emoji : EMOJIS) {
             JButton btn = new JButton(emoji);
-            btn.setFont(Theme.emojiFont(18f));
+            btn.setFont(Theme.iconFont(18f));
             btn.setFocusPainted(false);
             btn.setBorderPainted(false);
             btn.setContentAreaFilled(false);

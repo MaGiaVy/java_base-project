@@ -48,21 +48,23 @@ public final class Theme {
     };
 
     private static final String UI_FONT_FAMILY;
-    private static final String EMOJI_FONT_FAMILY;
+    private static final String ICON_FONT_FAMILY;
 
     static {
         Set<String> fonts = Arrays.stream(
                 GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()
         ).collect(Collectors.toSet());
-        UI_FONT_FAMILY = fonts.contains("Segoe UI") ? "Segoe UI" : Font.SANS_SERIF;
+        // Dùng logical composite font SansSerif để hỗ trợ ĐỒNG THỜI tiếng Việt có dấu + biểu tượng Unicode
+        // (Segoe UI thuần không có emoji, còn Segoe UI Emoji lại thiếu dấu tiếng Việt gây ô vuông □)
+        UI_FONT_FAMILY = Font.SANS_SERIF;
         if (fonts.contains("Segoe UI Emoji")) {
-            EMOJI_FONT_FAMILY = "Segoe UI Emoji";
+            ICON_FONT_FAMILY = "Segoe UI Emoji";
         } else if (fonts.contains("Apple Color Emoji")) {
-            EMOJI_FONT_FAMILY = "Apple Color Emoji";
+            ICON_FONT_FAMILY = "Apple Color Emoji";
         } else if (fonts.contains("Noto Color Emoji")) {
-            EMOJI_FONT_FAMILY = "Noto Color Emoji";
+            ICON_FONT_FAMILY = "Noto Color Emoji";
         } else {
-            EMOJI_FONT_FAMILY = UI_FONT_FAMILY;
+            ICON_FONT_FAMILY = Font.SANS_SERIF;
         }
     }
 
@@ -78,12 +80,18 @@ public final class Theme {
         return new Font(UI_FONT_FAMILY, style, Math.round(size));
     }
 
+    /** Font cho văn bản tiếng Việt có lẫn emoji (dùng composite SansSerif để không vỡ dấu tiếng Việt). */
     public static Font emojiFont(float size) {
-        return new Font(EMOJI_FONT_FAMILY, Font.PLAIN, Math.round(size));
+        return new Font(UI_FONT_FAMILY, Font.PLAIN, Math.round(size));
     }
 
     public static Font emojiFont(int style, float size) {
-        return new Font(EMOJI_FONT_FAMILY, style, Math.round(size));
+        return new Font(UI_FONT_FAMILY, style, Math.round(size));
+    }
+
+    /** Font thuần emoji (chỉ dùng cho nút/biểu tượng không chứa chữ tiếng Việt như EmojiPicker). */
+    public static Font iconFont(float size) {
+        return new Font(ICON_FONT_FAMILY, Font.PLAIN, Math.round(size));
     }
 
     public static Color avatarColor(long id, boolean isGroup) {
@@ -94,7 +102,10 @@ public final class Theme {
 
     public static String initials(String name) {
         if (name == null || name.isBlank()) return "?";
-        String[] parts = name.trim().split("\\s+");
+        // Lọc bỏ emoji/ký hiệu ở đầu tên (ví dụ "☁️ Cloud của tôi" -> lấy "CT" thay vì "□T")
+        String cleaned = name.replaceAll("[^\\p{L}\\p{N}\\s]", " ").trim();
+        if (cleaned.isEmpty()) return "?";
+        String[] parts = cleaned.split("\\s+");
         if (parts.length == 1) {
             return parts[0].substring(0, 1).toUpperCase();
         }
