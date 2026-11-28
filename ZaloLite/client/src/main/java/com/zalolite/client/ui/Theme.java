@@ -25,26 +25,30 @@ public final class Theme {
     private Theme() {
     }
 
-    // Bảng màu Berry Clean (nền trắng sạch kiểu Zalo PC + điểm nhấn tím mận & đỏ dâu)
-    public static final Color RAIL_BG = new Color(0x4C1D95);
-    public static final Color RAIL_HOVER = new Color(0x5B21B6);
-    public static final Color RAIL_ACTIVE = new Color(0x6D28D9);
-    public static final Color PRIMARY_RED = new Color(0xE11D48);
-    public static final Color PRIMARY_RED_DARK = new Color(0xBE123C);
-    public static final Color PRIMARY_PURPLE = new Color(0x6D28D9);
+    // Bảng màu Zalo Clean Light (tham khảo Zalo PC: rail xanh #0068FF, sidebar trắng, nền chat #EBECF0, bong bóng xanh nhạt #E5EFFF)
+    public static final Color RAIL_BG = new Color(0x0068FF);
+    public static final Color RAIL_HOVER = new Color(0x005CE6);
+    public static final Color RAIL_ACTIVE = new Color(0x0050C8);
+    public static final Color PRIMARY_RED = new Color(0x0068FF);
+    public static final Color PRIMARY_RED_DARK = new Color(0xDC2626);
+    public static final Color PRIMARY_PURPLE = new Color(0x005AE0);
+    public static final Color DANGER_RED = PRIMARY_RED_DARK;
     public static final Color BUBBLE_OTHER = Color.WHITE;
-    public static final Color TEXT_DARK = new Color(0x111827);
-    public static final Color TEXT_MUTED = new Color(0x6B7280);
+    public static final Color BUBBLE_MINE = new Color(0xE5EFFF);
+    public static final Color BUBBLE_MINE_BORDER = new Color(0xC8DEFF);
+    public static final Color SURFACE_SUBTLE = new Color(0xEAEDF0);
+    public static final Color TEXT_DARK = new Color(0x081C36);
+    public static final Color TEXT_MUTED = new Color(0x64748B);
     public static final Color SIDEBAR_BG = Color.WHITE;
-    public static final Color CHAT_BG = new Color(0xF4F5F7);
-    public static final Color ITEM_SELECTED = new Color(0xF5F3FF);
-    public static final Color ITEM_HOVER = new Color(0xF9FAFB);
+    public static final Color CHAT_BG = new Color(0xEBECF0);
+    public static final Color ITEM_SELECTED = new Color(0xE5EFFF);
+    public static final Color ITEM_HOVER = new Color(0xF3F5F6);
     public static final Color BORDER_PINK = new Color(0xE5E7EB);
-    public static final Color ONLINE_GREEN = new Color(0x10B981);
+    public static final Color ONLINE_GREEN = new Color(0x16A34A);
 
     private static final Color[] AVATAR_PALETTE = {
-            new Color(0xE11D48), new Color(0x9333EA), new Color(0xDB2777),
-            new Color(0x7C3AED), new Color(0xC026D3), new Color(0xEC4899)
+            new Color(0x0068FF), new Color(0x0EA5E9), new Color(0x10B981),
+            new Color(0xF59E0B), new Color(0x6366F1), new Color(0xEC4899)
     };
 
     private static final String UI_FONT_FAMILY;
@@ -152,6 +156,7 @@ public final class Theme {
         b.setBackground(PRIMARY_RED);
         b.setForeground(Color.WHITE);
         b.setFocusPainted(false);
+        b.setBorderPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
     }
@@ -159,9 +164,10 @@ public final class Theme {
     public static JButton softButton(String text) {
         JButton b = new JButton(text);
         b.setFont(uiFont(Font.BOLD, 12.5f));
-        b.setBackground(BUBBLE_OTHER);
+        b.setBackground(SURFACE_SUBTLE);
         b.setForeground(TEXT_DARK);
         b.setFocusPainted(false);
+        b.setBorderPainted(false);
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
     }

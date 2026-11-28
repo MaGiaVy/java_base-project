@@ -7,6 +7,7 @@ import com.zalolite.client.ui.Theme;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.Color;
+import java.awt.Insets;
 
 /**
  * Điểm khởi chạy (entry point) của ứng dụng desktop ZaloLite Client.
@@ -17,15 +18,18 @@ public class ZaloApp {
     public static final Color BERRY_RED = Theme.PRIMARY_RED;
 
     public static void main(String[] args) {
-        // Cài đặt giao diện FlatLightLaf hiện đại và các thuộc tính bo góc/màu sắc chung
+        // Cài đặt giao diện FlatLightLaf hiện đại phong cách Zalo PC (nền sáng, bo góc sạch, thanh cuộn mảnh)
         FlatLightLaf.setup();
         UIManager.put("Component.accentColor", Theme.PRIMARY_RED);
-        UIManager.put("Component.focusColor", Theme.PRIMARY_PURPLE);
-        UIManager.put("Button.arc", 12);
-        UIManager.put("Component.arc", 12);
-        UIManager.put("TextComponent.arc", 12);
+        UIManager.put("Component.focusColor", Theme.PRIMARY_RED);
+        UIManager.put("Component.focusWidth", 1);
+        UIManager.put("Button.arc", 10);
+        UIManager.put("Component.arc", 10);
+        UIManager.put("TextComponent.arc", 10);
+        UIManager.put("TextField.margin", new Insets(4, 10, 4, 10));
         UIManager.put("ScrollBar.thumbArc", 999);
-        UIManager.put("ScrollBar.width", 8);
+        UIManager.put("ScrollBar.width", 7);
+        UIManager.put("ScrollBar.thumb", new Color(0xC5CCD4));
         UIManager.put("defaultFont", Theme.uiFont(13f));
         // Khởi tạo cửa sổ LoginFrame trên luồng sự kiện Swing (EDT)
         SwingUtilities.invokeLater(() -> new LoginFrame().setVisible(true));

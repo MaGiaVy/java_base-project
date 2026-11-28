@@ -41,9 +41,9 @@ public class GroupCreateDialog extends JDialog {
 
         JPanel top = new JPanel(new BorderLayout(0, 6));
         top.setOpaque(false);
-        JLabel title = new JLabel("✨ Tạo nhóm Berry Pop");
+        JLabel title = new JLabel("Tạo nhóm chat mới");
         title.setFont(Theme.emojiFont(Font.BOLD, 16f));
-        title.setForeground(Theme.PRIMARY_PURPLE);
+        title.setForeground(Theme.PRIMARY_RED);
         nameField.putClientProperty("JTextField.placeholderText", "Nhập tên nhóm...");
         nameField.setPreferredSize(new Dimension(0, 36));
         top.add(title, BorderLayout.NORTH);

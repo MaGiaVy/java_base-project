@@ -27,29 +27,35 @@ public class LoginFrame extends JFrame {
     private int discoveredFilePort = -1;
 
     public LoginFrame() {
-        super("ZaloLite Berry - Đăng nhập");
+        super("ZaloLite - Đăng nhập");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setSize(420, 540);
         setLocationRelativeTo(null);
         setResizable(false);
 
         JPanel root = new JPanel(new GridBagLayout());
-        root.setBackground(Theme.SIDEBAR_BG);
+        root.setBackground(new Color(0xEBF3FF));
 
-        Theme.RoundedPanel card = new Theme.RoundedPanel(22, Color.WHITE, null, Theme.BORDER_PINK);
+        Theme.RoundedPanel card = new Theme.RoundedPanel(18, Color.WHITE, null, new Color(0xD6E4FF));
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBorder(BorderFactory.createEmptyBorder(28, 30, 26, 30));
 
-        JLabel badge = new JLabel("🍓", SwingConstants.CENTER);
-        badge.setFont(Theme.emojiFont(36f));
+        Theme.RoundedPanel badge = new Theme.RoundedPanel(16, Theme.PRIMARY_RED);
+        badge.setLayout(new GridBagLayout());
+        badge.setPreferredSize(new Dimension(54, 54));
+        badge.setMaximumSize(new Dimension(54, 54));
         badge.setAlignmentX(CENTER_ALIGNMENT);
+        JLabel badgeLetter = new JLabel("Z", SwingConstants.CENTER);
+        badgeLetter.setFont(Theme.uiFont(Font.BOLD, 30f));
+        badgeLetter.setForeground(Color.WHITE);
+        badge.add(badgeLetter);
 
-        JLabel logo = new JLabel("ZaloLite Berry");
+        JLabel logo = new JLabel("ZaloLite");
         logo.setFont(Theme.uiFont(Font.BOLD, 28f));
         logo.setForeground(Theme.PRIMARY_RED);
         logo.setAlignmentX(CENTER_ALIGNMENT);
 
-        JLabel sub = new JLabel("Đăng nhập tài khoản của bạn");
+        JLabel sub = new JLabel("Đăng nhập tài khoản để kết nối");
         sub.setFont(Theme.uiFont(13f));
         sub.setForeground(Theme.TEXT_MUTED);
         sub.setAlignmentX(CENTER_ALIGNMENT);
@@ -62,10 +68,10 @@ public class LoginFrame extends JFrame {
         registerBtn.setFont(Theme.uiFont(Font.BOLD, 13f));
         registerBtn.setBorderPainted(false);
         registerBtn.setContentAreaFilled(false);
-        registerBtn.setForeground(Theme.PRIMARY_PURPLE);
+        registerBtn.setForeground(Theme.PRIMARY_RED);
         registerBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         status.setFont(Theme.uiFont(12f));
-        status.setForeground(Theme.PRIMARY_RED_DARK);
+        status.setForeground(Theme.DANGER_RED);
 
         card.add(badge);
         card.add(Box.createVerticalStrut(4));

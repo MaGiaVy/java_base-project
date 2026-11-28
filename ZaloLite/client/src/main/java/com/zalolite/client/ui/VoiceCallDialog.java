@@ -107,7 +107,7 @@ public final class VoiceCallDialog extends JDialog {
         // [UI -> GỬI] Bấm "Từ chối" / "Cúp máy": đóng phiên UDP và gọi callback gửi CALL_END qua TLS
         hangupBtn = Theme.primaryButton(incoming ? "📞 Từ chối" : "📞 Cúp máy");
         hangupBtn.setFont(Theme.emojiFont(Font.BOLD, 13f));
-        hangupBtn.setBackground(Theme.PRIMARY_RED);
+        hangupBtn.setBackground(Theme.DANGER_RED);
         hangupBtn.addActionListener(e -> handleLocalHangup());
 
         actions.add(acceptBtn);
@@ -147,7 +147,7 @@ public final class VoiceCallDialog extends JDialog {
             muteBtn.setVisible(true);
             muteBtn.setEnabled(session != null);
             hangupBtn.setText("📞 Cúp máy");
-            hangupBtn.setBackground(Theme.PRIMARY_RED);
+            hangupBtn.setBackground(Theme.DANGER_RED);
             statusLabel.setText("Đang trong cuộc gọi");
             statusLabel.setForeground(Theme.ONLINE_GREEN);
 
@@ -174,7 +174,7 @@ public final class VoiceCallDialog extends JDialog {
             hangupBtn.setEnabled(false);
             if (statusText != null && !statusText.isBlank()) {
                 statusLabel.setText(statusText);
-                statusLabel.setForeground(Theme.PRIMARY_RED);
+                statusLabel.setForeground(Theme.DANGER_RED);
                 Timer closeDelay = new Timer(900, e -> dispose());
                 closeDelay.setRepeats(false);
                 closeDelay.start();

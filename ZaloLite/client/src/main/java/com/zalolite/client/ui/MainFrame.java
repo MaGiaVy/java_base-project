@@ -71,24 +71,24 @@ public class MainFrame extends JFrame {
     private ChatPanel activeChat;
 
     public MainFrame(Connection conn, User me) {
-        super("ZaloLite Berry - " + me.name);
+        super("ZaloLite - " + me.name);
         this.conn = conn;
         this.me = me;
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setSize(1120, 700);
-        setMinimumSize(new Dimension(880, 560));
+        setSize(1160, 720);
+        setMinimumSize(new Dimension(900, 580));
         setLocationRelativeTo(null);
 
-        // --- 1. Left Rail (58px, #5B21B6) ---
+        // --- 1. Left Rail (62px, #0068FF chuẩn Zalo PC) ---
         JPanel rail = new JPanel();
         rail.setLayout(new BoxLayout(rail, BoxLayout.Y_AXIS));
         rail.setBackground(Theme.RAIL_BG);
-        rail.setPreferredSize(new Dimension(58, 0));
-        rail.setBorder(BorderFactory.createEmptyBorder(14, 6, 14, 6));
+        rail.setPreferredSize(new Dimension(62, 0));
+        rail.setBorder(BorderFactory.createEmptyBorder(14, 7, 14, 7));
 
         Theme.AvatarBadge myAvatar = new Theme.AvatarBadge(
-                me.name, 40, Theme.PRIMARY_RED, true, true);
+                me.name, 42, new Color(0x004BB8), true, true);
         myAvatar.setAlignmentX(CENTER_ALIGNMENT);
         myAvatar.setToolTipText(me.name + " (" + me.phone + ") — Bấm để sửa hồ sơ / đổi mật khẩu");
         myAvatar.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -98,8 +98,8 @@ public class MainFrame extends JFrame {
                 new ProfileDialog(MainFrame.this, conn, me, updated -> {
                     me.name = updated.name;
                     me.email = updated.email;
-                    setTitle("ZaloLite Berry - " + me.name);
-                    myAvatar.setNameAndColor(me.name, Theme.PRIMARY_RED, true, true);
+                    setTitle("ZaloLite - " + me.name);
+                    myAvatar.setNameAndColor(me.name, new Color(0x004BB8), true, true);
                     myAvatar.setToolTipText(me.name + " (" + me.phone + ") — Bấm để sửa hồ sơ / đổi mật khẩu");
                 }).setVisible(true);
             }
@@ -141,8 +141,8 @@ public class MainFrame extends JFrame {
         rail.add(Box.createVerticalStrut(10));
         rail.add(logoutBtn);
 
-        // --- 2. Middle Panel (290px, #FFF5F8) ---
-        midPanel.setPreferredSize(new Dimension(290, 0));
+        // --- 2. Middle Panel (308px, #FFFFFF chuẩn Zalo PC) ---
+        midPanel.setPreferredSize(new Dimension(308, 0));
         midPanel.setBackground(Theme.SIDEBAR_BG);
         midPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, Theme.BORDER_PINK));
 
@@ -240,6 +240,9 @@ public class MainFrame extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(4, 0));
         searchRow.setOpaque(false);
         convFilterField.putClientProperty("JTextField.placeholderText", "Tìm kiếm...");
+        convFilterField.putClientProperty("JComponent.roundRect", true);
+        convFilterField.setBackground(Theme.SURFACE_SUBTLE);
+        convFilterField.setPreferredSize(new Dimension(0, 32));
         convFilterField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) { renderConversations(); }
@@ -353,13 +356,19 @@ public class MainFrame extends JFrame {
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBorder(BorderFactory.createEmptyBorder(30, 38, 30, 38));
 
-        JLabel icon = new JLabel("🍓", SwingConstants.CENTER);
-        icon.setFont(Theme.emojiFont(48f));
-        icon.setAlignmentX(CENTER_ALIGNMENT);
+        Theme.RoundedPanel logoBadge = new Theme.RoundedPanel(18, Theme.PRIMARY_RED);
+        logoBadge.setLayout(new GridBagLayout());
+        logoBadge.setPreferredSize(new Dimension(64, 64));
+        logoBadge.setMaximumSize(new Dimension(64, 64));
+        logoBadge.setAlignmentX(CENTER_ALIGNMENT);
+        JLabel icon = new JLabel("Z", SwingConstants.CENTER);
+        icon.setFont(Theme.uiFont(Font.BOLD, 34f));
+        icon.setForeground(Color.WHITE);
+        logoBadge.add(icon);
 
-        JLabel title = new JLabel("Chào mừng đến với ZaloLite Berry!");
+        JLabel title = new JLabel("Chào mừng đến với ZaloLite PC!");
         title.setFont(Theme.uiFont(Font.BOLD, 20f));
-        title.setForeground(Theme.PRIMARY_RED);
+        title.setForeground(Theme.TEXT_DARK);
         title.setAlignmentX(CENTER_ALIGNMENT);
 
         JLabel sub = new JLabel("Xin chào " + me.name + " — chọn một hội thoại hoặc tìm bạn bè để bắt đầu.");
@@ -367,8 +376,8 @@ public class MainFrame extends JFrame {
         sub.setForeground(Theme.TEXT_MUTED);
         sub.setAlignmentX(CENTER_ALIGNMENT);
 
-        card.add(icon);
-        card.add(Box.createVerticalStrut(8));
+        card.add(logoBadge);
+        card.add(Box.createVerticalStrut(12));
         card.add(title);
         card.add(Box.createVerticalStrut(6));
         card.add(sub);
@@ -484,12 +493,12 @@ public class MainFrame extends JFrame {
                 : ((c.lastMessage == null || c.lastMessage.isBlank()) ? "Bắt đầu trò chuyện" : c.lastMessage);
         JLabel previewLbl = new JLabel(preview);
         previewLbl.setFont(Theme.emojiFont((c.unreadCount > 0 || hasDraft) ? Font.BOLD : Font.PLAIN, 12f));
-        previewLbl.setForeground(hasDraft ? Theme.PRIMARY_RED : (c.unreadCount > 0 ? Theme.TEXT_DARK : Theme.TEXT_MUTED));
+        previewLbl.setForeground(hasDraft ? Theme.DANGER_RED : (c.unreadCount > 0 ? Theme.TEXT_DARK : Theme.TEXT_MUTED));
         bottomLine.add(previewLbl, BorderLayout.CENTER);
 
         if (c.unreadCount > 0) {
             String badgeTxt = c.unreadCount > 99 ? "99+" : String.valueOf(c.unreadCount);
-            Theme.PillLabel badge = new Theme.PillLabel(badgeTxt, Theme.PRIMARY_RED, Color.WHITE, 10.5f, false);
+            Theme.PillLabel badge = new Theme.PillLabel(badgeTxt, Theme.DANGER_RED, Color.WHITE, 10.5f, false);
             badge.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             bottomLine.add(badge, BorderLayout.EAST);
         }
@@ -999,7 +1008,7 @@ public class MainFrame extends JFrame {
                 int bh = 16;
                 int bx = getWidth() - bw - 1;
                 int by = 1;
-                g3.setColor(Theme.PRIMARY_RED);
+                g3.setColor(Theme.DANGER_RED);
                 g3.fillRoundRect(bx, by, bw, bh, bh, bh);
                 g3.setColor(Color.WHITE);
                 g3.drawString(txt, bx + (bw - fm.stringWidth(txt)) / 2, by + fm.getAscent() + 1);

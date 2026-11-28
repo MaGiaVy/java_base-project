@@ -150,10 +150,10 @@ public class MessageBubble extends JPanel {
             bubble.add(lbl, BorderLayout.CENTER);
         } else {
             bubble = mine
-                    ? new Theme.RoundedPanel(14, Theme.PRIMARY_RED, Theme.PRIMARY_RED_DARK, null)
-                    : new Theme.RoundedPanel(14, Color.WHITE, null, Theme.BORDER_PINK);
+                    ? new Theme.RoundedPanel(12, Theme.BUBBLE_MINE, null, Theme.BUBBLE_MINE_BORDER)
+                    : new Theme.RoundedPanel(12, Color.WHITE, null, Theme.BORDER_PINK);
             bubble.setLayout(new BorderLayout());
-            bubble.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+            bubble.setBorder(BorderFactory.createEmptyBorder(9, 12, 9, 12));
 
             JPanel inner = new JPanel();
             inner.setOpaque(false);
@@ -162,7 +162,7 @@ public class MessageBubble extends JPanel {
             if (msg.forwarded) {
                 JLabel fwd = new JLabel("↪ Đã chuyển tiếp");
                 fwd.setFont(Theme.emojiFont(Font.ITALIC, 11f));
-                fwd.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+                fwd.setForeground(Theme.TEXT_MUTED);
                 fwd.setBorder(BorderFactory.createEmptyBorder(0, 0, 3, 0));
                 fwd.setAlignmentX(LEFT_ALIGNMENT);
                 inner.add(fwd);
@@ -170,17 +170,17 @@ public class MessageBubble extends JPanel {
 
             if (msg.replyTo != null && (msg.replyPreview != null || msg.replySender != null)) {
                 JPanel quote = new JPanel(new GridLayout(0, 1));
-                quote.setBackground(mine ? new Color(0x9F1239) : new Color(0xE9D5FF));
+                quote.setBackground(mine ? new Color(0xD4E6FF) : new Color(0xF1F5F9));
                 quote.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createMatteBorder(0, 3, 0, 0, mine ? Color.WHITE : Theme.PRIMARY_PURPLE),
+                        BorderFactory.createMatteBorder(0, 3, 0, 0, Theme.PRIMARY_RED),
                         BorderFactory.createEmptyBorder(4, 8, 4, 8)));
                 quote.setAlignmentX(LEFT_ALIGNMENT);
                 JLabel qs = new JLabel(msg.replySender != null ? msg.replySender : "Trả lời");
                 qs.setFont(Theme.uiFont(Font.BOLD, 11f));
-                qs.setForeground(mine ? Color.WHITE : Theme.PRIMARY_PURPLE);
+                qs.setForeground(Theme.PRIMARY_RED);
                 JLabel qp = new JLabel(msg.replyPreview != null ? msg.replyPreview : "");
                 qp.setFont(Theme.emojiFont(11.5f));
-                qp.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_DARK);
+                qp.setForeground(Theme.TEXT_DARK);
                 quote.add(qs);
                 quote.add(qp);
                 inner.add(quote);
@@ -209,7 +209,7 @@ public class MessageBubble extends JPanel {
     }
 
     private JComponent buildContentComponent(boolean mine) {
-        Color fg = mine ? Color.WHITE : Theme.TEXT_DARK;
+        Color fg = Theme.TEXT_DARK;
         String kind = msg.kind == null ? Message.KIND_TEXT : msg.kind;
         return switch (kind) {
             case Message.KIND_IMAGE -> buildImageCard(mine, fg);
@@ -267,7 +267,7 @@ public class MessageBubble extends JPanel {
 
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         btns.setOpaque(false);
-        JButton openBtn = mine ? Theme.softButton("📂 Mở") : Theme.primaryButton("📂 Mở");
+        JButton openBtn = Theme.primaryButton("📂 Mở");
         openBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
         JButton dlBtn = Theme.softButton("⬇ Tải về");
         dlBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
@@ -312,7 +312,7 @@ public class MessageBubble extends JPanel {
         if (msg.fileName != null && !msg.fileName.isBlank()) {
             JLabel cap = new JLabel(msg.fileName + (msg.fileSize > 0 ? " (" + formatFileSize(msg.fileSize) + ")" : ""));
             cap.setFont(Theme.uiFont(11f));
-            cap.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+            cap.setForeground(Theme.TEXT_MUTED);
             cap.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
             cap.setAlignmentX(LEFT_ALIGNMENT);
             box.add(cap);
@@ -355,7 +355,7 @@ public class MessageBubble extends JPanel {
     private JComponent buildAudioCard(boolean mine, Color fg) {
         JPanel box = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         box.setOpaque(false);
-        JButton playBtn = mine ? Theme.softButton("▶ Nghe") : Theme.primaryButton("▶ Nghe");
+        JButton playBtn = Theme.primaryButton("▶ Nghe");
         playBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
         JLabel lbl = new JLabel("🎤 Tin nhắn thoại" + (msg.durationSec > 0 ? " (" + msg.durationSec + "s)" : ""));
         lbl.setFont(Theme.emojiFont(12.5f));
@@ -406,7 +406,7 @@ public class MessageBubble extends JPanel {
         pane.setOpaque(false);
         pane.setEditable(false);
         pane.setBorder(null);
-        Color mentionColor = mine ? new Color(0xFEF08A) : Theme.PRIMARY_PURPLE;
+        Color mentionColor = Theme.PRIMARY_RED;
         EmojiAssets.insertRichText(pane, text, fg, 13.5f, mentionColor);
 
         // Tính chiều rộng gọn theo nội dung, tối đa MAX_TEXT_WIDTH để bong bóng ngắn không bị phình
@@ -432,18 +432,18 @@ public class MessageBubble extends JPanel {
                 preview -> {
                     if (preview == null) return;
                     Theme.RoundedPanel card = new Theme.RoundedPanel(10,
-                            mine ? new Color(0x9F1239) : Color.WHITE, null,
-                            mine ? new Color(0xFDA4AF) : Theme.BORDER_PINK);
+                            Color.WHITE, null,
+                            mine ? Theme.BUBBLE_MINE_BORDER : Theme.BORDER_PINK);
                     card.setLayout(new GridLayout(0, 1, 0, 2));
                     card.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
                     card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                     card.setAlignmentX(LEFT_ALIGNMENT);
                     JLabel t = new JLabel("🔗 " + preview.title());
                     t.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
-                    t.setForeground(mine ? Color.WHITE : Theme.TEXT_DARK);
+                    t.setForeground(Theme.TEXT_DARK);
                     JLabel h = new JLabel(preview.host());
                     h.setFont(Theme.uiFont(10.5f));
-                    h.setForeground(mine ? new Color(0xFFE4E6) : Theme.TEXT_MUTED);
+                    h.setForeground(Theme.TEXT_MUTED);
                     card.add(t);
                     card.add(h);
                     card.addMouseListener(new MouseAdapter() {

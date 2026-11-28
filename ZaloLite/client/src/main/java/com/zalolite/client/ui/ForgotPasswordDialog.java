@@ -22,7 +22,7 @@ public class ForgotPasswordDialog extends JDialog {
         root.setBackground(Theme.SIDEBAR_BG);
         root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
 
-        JLabel title = new JLabel("🍓 Khôi phục mật khẩu");
+        JLabel title = new JLabel("Khôi phục mật khẩu");
         title.setFont(Theme.emojiFont(Font.BOLD, 16f));
         title.setForeground(Theme.PRIMARY_RED);
         title.setAlignmentX(LEFT_ALIGNMENT);

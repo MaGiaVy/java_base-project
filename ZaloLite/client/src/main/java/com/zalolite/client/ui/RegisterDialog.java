@@ -13,7 +13,7 @@ import java.awt.*;
  */
 public class RegisterDialog extends JDialog {
     public RegisterDialog(Frame owner, String server) {
-        super(owner, "ZaloLite Berry - Tạo tài khoản", true);
+        super(owner, "ZaloLite - Tạo tài khoản", true);
         JTextField phone = new JTextField();
         JTextField name = new JTextField();
         JTextField email = new JTextField();
@@ -21,14 +21,14 @@ public class RegisterDialog extends JDialog {
         JPasswordField pass2 = new JPasswordField();
         JLabel status = new JLabel(" ");
         status.setFont(Theme.uiFont(12f));
-        status.setForeground(Theme.PRIMARY_RED_DARK);
+        status.setForeground(Theme.DANGER_RED);
         JButton ok = Theme.primaryButton("Đăng ký");
 
         JPanel form = new JPanel(new GridLayout(0, 1, 6, 6));
         form.setBackground(Theme.SIDEBAR_BG);
         form.setBorder(BorderFactory.createEmptyBorder(20, 24, 20, 24));
 
-        JLabel title = new JLabel("🍓 Tạo tài khoản ZaloLite Berry");
+        JLabel title = new JLabel("Tạo tài khoản ZaloLite");
         title.setFont(Theme.emojiFont(Font.BOLD, 16f));
         title.setForeground(Theme.PRIMARY_RED);
         form.add(title);

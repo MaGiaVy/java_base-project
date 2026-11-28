@@ -156,7 +156,7 @@ public class ChatPanel extends JPanel {
         JPanel headerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         headerActions.setOpaque(false);
         if (!conv.isCloud) {
-            Theme.PillLabel p2pPill = new Theme.PillLabel("⚡ P2P", Theme.BUBBLE_OTHER, Theme.PRIMARY_PURPLE, 11.5f, true);
+            Theme.PillLabel p2pPill = new Theme.PillLabel("⚡ P2P", Theme.ITEM_SELECTED, Theme.PRIMARY_RED, 11.5f, true);
             p2pPill.setToolTipText("File/ảnh/thoại ưu tiên P2P trực tiếp, tự chuyển về Server nếu ngoại tuyến");
             headerActions.add(p2pPill);
         }
@@ -181,10 +181,10 @@ public class ChatPanel extends JPanel {
         topWrap.add(header, BorderLayout.NORTH);
 
         // --- Pin banner (hiện khi hội thoại có tin nhắn được ghim) ---
-        pinBanner.setBackground(new Color(0xF8F7FF));
+        pinBanner.setBackground(new Color(0xF0F6FF));
         pinBanner.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xE5E7EB)),
-                BorderFactory.createEmptyBorder(6, 16, 6, 12)));
+                BorderFactory.createMatteBorder(0, 3, 1, 0, Theme.PRIMARY_RED),
+                BorderFactory.createEmptyBorder(6, 14, 6, 12)));
         pinBannerLabel.setFont(Theme.emojiFont(12.5f));
         pinBannerLabel.setForeground(Theme.TEXT_DARK);
         pinBannerLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -289,13 +289,13 @@ public class ChatPanel extends JPanel {
         replyBar.add(cancelReplyBtn, BorderLayout.EAST);
         replyBar.setVisible(false);
 
-        voiceBar.setBackground(new Color(0xFFF1F2));
+        voiceBar.setBackground(new Color(0xFEF2F2));
         voiceBar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 3, 0, 0, Theme.PRIMARY_RED),
+                BorderFactory.createMatteBorder(0, 3, 0, 0, Theme.DANGER_RED),
                 BorderFactory.createEmptyBorder(5, 12, 5, 10)));
         voiceTimeLabel.setFont(Theme.emojiFont(Font.BOLD, 12f));
-        voiceTimeLabel.setForeground(Theme.PRIMARY_RED);
-        voiceVuBar.setForeground(Theme.PRIMARY_RED);
+        voiceTimeLabel.setForeground(Theme.DANGER_RED);
+        voiceVuBar.setForeground(Theme.DANGER_RED);
         voiceVuBar.setBackground(Color.WHITE);
         voiceVuBar.setPreferredSize(new Dimension(120, 12));
         voiceVuBar.setStringPainted(false);
@@ -374,6 +374,7 @@ public class ChatPanel extends JPanel {
         inputField.setFont(Theme.emojiFont(13.5f));
         inputField.putClientProperty("JTextField.placeholderText",
                 (conv.isGroup ? "Nhập @, tin nhắn tới " : "Nhập tin nhắn tới ") + conv.name + "...");
+        inputField.putClientProperty("FlatLaf.style", "borderWidth:0; focusWidth:0; background:#FFFFFF");
         inputField.setPreferredSize(new Dimension(0, 38));
         inputRow.add(inputField, BorderLayout.CENTER);
 
@@ -474,7 +475,7 @@ public class ChatPanel extends JPanel {
             subtitleLabel.setText("☁️ Lưu trữ tệp và ghi chú cá nhân");
             subtitleLabel.setForeground(Theme.PRIMARY_PURPLE);
         } else if (conv.isGroup) {
-            subtitleLabel.setText(conv.memberCount > 0 ? conv.memberCount + " thành viên" : "Nhóm chat Berry Pop");
+            subtitleLabel.setText(conv.memberCount > 0 ? conv.memberCount + " thành viên" : "Nhóm chat ZaloLite");
             subtitleLabel.setForeground(Theme.TEXT_MUTED);
         } else if (conv.peerOnline) {
             subtitleLabel.setText("● Đang hoạt động");
@@ -689,7 +690,7 @@ public class ChatPanel extends JPanel {
         p.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         Theme.PillLabel pill = new Theme.PillLabel(
                 Theme.formatDateDivider(epochMillis),
-                Theme.ITEM_SELECTED, Theme.TEXT_MUTED, 11f, false);
+                new Color(0xD5D9DF), new Color(0x334155), 11f, false);
         pill.setBorder(BorderFactory.createEmptyBorder(3, 12, 3, 12));
         p.add(pill);
         return p;
