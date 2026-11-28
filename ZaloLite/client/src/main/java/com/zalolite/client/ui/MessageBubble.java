@@ -316,23 +316,27 @@ public class MessageBubble extends JPanel {
             }
             playBtn.setEnabled(false);
             mediaResolver.accept(msg, file -> {
-                playBtn.setEnabled(true);
                 if (file == null) {
+                    playBtn.setEnabled(true);
                     JOptionPane.showMessageDialog(this, "Không tìm thấy hoặc không tải được tin nhắn thoại.");
                     return;
                 }
-                try {
-                    playing[0] = true;
-                    playBtn.setText("⏹ Dừng");
+                Theme.runAsync(() -> {
                     audioHelper.play(file, () -> SwingUtilities.invokeLater(() -> {
                         playing[0] = false;
                         playBtn.setText("▶ Nghe");
                     }));
-                } catch (Exception ex) {
+                    return null;
+                }, ok -> {
+                    playing[0] = true;
+                    playBtn.setText("⏹ Dừng");
+                    playBtn.setEnabled(true);
+                }, err -> {
                     playing[0] = false;
                     playBtn.setText("▶ Nghe");
-                    JOptionPane.showMessageDialog(this, "Không phát được âm thanh: " + ex.getMessage());
-                }
+                    playBtn.setEnabled(true);
+                    JOptionPane.showMessageDialog(this, "Không phát được âm thanh: " + err);
+                });
             });
         });
 

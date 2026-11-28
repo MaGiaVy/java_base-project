@@ -847,16 +847,30 @@ public class ChatPanel extends JPanel {
         if (idx < 0) return;
         Conversation dest = list.get(idx);
         Theme.runAsync(
-                () -> conn.request(new Packet(PacketType.MSG_SEND)
-                        .put("convId", dest.id)
-                        .put("kind", m.kind == null ? Message.KIND_TEXT : m.kind)
-                        .put("content", m.content)
-                        .put("filePath", m.filePath)
-                        .put("fileName", m.fileName)
-                        .put("fileSize", m.fileSize)
-                        .put("durationSec", m.durationSec)
-                        .put("transport", m.transport)
-                        .put("forwarded", true)),
+                () -> {
+                    String fp = m.filePath;
+                    String tr = m.transport;
+                    // Nếu tin gốc là P2P, tải lên FileServer để hội thoại đích nhận được đầy đủ
+                    if (fp != null && fp.startsWith("p2p://")) {
+                        File local = localMediaFiles == null ? null : localMediaFiles.get(fp);
+                        if (local == null || !local.isFile()) {
+                            throw new Exception("Tệp P2P không còn trên máy để chuyển tiếp");
+                        }
+                        fp = FileTransfer.upload(conn.getHost(), conn.getFilePort(), local, null);
+                        tr = "SERVER";
+                        localMediaFiles.put(fp, local);
+                    }
+                    return conn.request(new Packet(PacketType.MSG_SEND)
+                            .put("convId", dest.id)
+                            .put("kind", m.kind == null ? Message.KIND_TEXT : m.kind)
+                            .put("content", m.content)
+                            .put("filePath", fp)
+                            .put("fileName", m.fileName)
+                            .put("fileSize", m.fileSize)
+                            .put("durationSec", m.durationSec)
+                            .put("transport", tr)
+                            .put("forwarded", true));
+                },
                 res -> {
                     if (!res.isOk()) {
                         JOptionPane.showMessageDialog(this, res.str("error"));

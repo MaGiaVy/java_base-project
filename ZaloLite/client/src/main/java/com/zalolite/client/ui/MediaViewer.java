@@ -43,56 +43,48 @@ public final class MediaViewer {
             JOptionPane.showMessageDialog(parent, "Không tìm thấy tệp hình ảnh.", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
-        BufferedImage img;
-        try {
-            img = ImageIO.read(imageFile);
-        } catch (IOException e) {
-            img = null;
-        }
-        if (img == null) {
-            JOptionPane.showMessageDialog(parent, "Không thể đọc tệp hình ảnh.", "Lỗi", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
         Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
         int maxW = (int) (screen.width * 0.85);
         int maxH = (int) (screen.height * 0.85);
-        double scale = Math.min(1.0, Math.min((double) maxW / img.getWidth(), (double) maxH / img.getHeight()));
-        Image display = scale < 1.0
-                ? img.getScaledInstance(
-                        Math.max(1, (int) Math.round(img.getWidth() * scale)),
-                        Math.max(1, (int) Math.round(img.getHeight() * scale)),
-                        Image.SCALE_SMOOTH)
-                : img;
+        // Đọc & thu phóng ảnh ở luồng nền để không làm đơ giao diện (EDT)
+        Theme.runAsync(
+                () -> loadThumbnail(imageFile, maxW, maxH),
+                icon -> {
+                    if (icon == null) {
+                        JOptionPane.showMessageDialog(parent, "Không thể đọc tệp hình ảnh.", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                    Window owner = parent != null ? SwingUtilities.getWindowAncestor(parent) : null;
+                    JDialog dialog = new JDialog(owner, title != null && !title.isBlank() ? title : imageFile.getName(),
+                            Dialog.ModalityType.APPLICATION_MODAL);
+                    dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
 
-        Window owner = parent != null ? SwingUtilities.getWindowAncestor(parent) : null;
-        JDialog dialog = new JDialog(owner, title != null && !title.isBlank() ? title : imageFile.getName(),
-                Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+                    JPanel content = new JPanel(new BorderLayout());
+                    content.setBackground(Theme.CHAT_BG);
+                    content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
-        JPanel content = new JPanel(new BorderLayout());
-        content.setBackground(Theme.CHAT_BG);
-        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+                    JLabel label = new JLabel(icon, SwingConstants.CENTER);
+                    label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    label.addMouseListener(new MouseAdapter() {
+                        @Override
+                        public void mouseClicked(MouseEvent e) {
+                            dialog.dispose();
+                        }
+                    });
+                    content.add(label, BorderLayout.CENTER);
 
-        JLabel label = new JLabel(new ImageIcon(display), SwingConstants.CENTER);
-        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        label.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                dialog.dispose();
-            }
-        });
-        content.add(label, BorderLayout.CENTER);
-
-        dialog.getRootPane().registerKeyboardAction(
-                e -> dialog.dispose(),
-                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
-                JComponent.WHEN_IN_FOCUSED_WINDOW
+                    dialog.getRootPane().registerKeyboardAction(
+                            e -> dialog.dispose(),
+                            KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                            JComponent.WHEN_IN_FOCUSED_WINDOW
+                    );
+                    dialog.setContentPane(content);
+                    dialog.pack();
+                    dialog.setLocationRelativeTo(parent);
+                    dialog.setVisible(true);
+                },
+                err -> JOptionPane.showMessageDialog(parent, "Không thể đọc tệp hình ảnh.", "Lỗi", JOptionPane.ERROR_MESSAGE)
         );
-        dialog.setContentPane(content);
-        dialog.pack();
-        dialog.setLocationRelativeTo(parent);
-        dialog.setVisible(true);
     }
 
     public static void openWithSystemPlayer(Component parent, File file) {
