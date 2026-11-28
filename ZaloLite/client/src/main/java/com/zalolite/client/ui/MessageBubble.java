@@ -23,7 +23,6 @@ import java.util.function.Consumer;
  *  - Menu chuột phải kích hoạt thả cảm xúc (Reaction), Trả lời (Reply), Chuyển tiếp (Forward), Thu hồi (Recall).
  */
 public class MessageBubble extends JPanel {
-    private static final String[] QUICK_REACTIONS = {"❤️", "😆", "😮", "😢", "👍"};
     private static final int MAX_TEXT_WIDTH = 360;
 
     private final Message msg;
@@ -33,16 +32,19 @@ public class MessageBubble extends JPanel {
     private final Consumer<Message> onRecall;
     private final Consumer<Message> onReply;
     private final Consumer<Message> onForward;
+    private final Consumer<Message> onPin;
     private final BiConsumer<Message, Consumer<File>> mediaResolver;
     private final AudioHelper audioHelper;
 
     private final JPanel bodyHolder = new JPanel(new BorderLayout());
-    private final JPanel reactionsBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+    private final JPanel reactionsBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
     private JLabel metaLabel;
+    private VideoPlayerPane activeVideoPlayer;
 
     public MessageBubble(Message msg, long meId, boolean isGroup,
                          BiConsumer<Message, String> onReact, Consumer<Message> onRecall,
                          Consumer<Message> onReply, Consumer<Message> onForward,
+                         Consumer<Message> onPin,
                          BiConsumer<Message, Consumer<File>> mediaResolver, AudioHelper audioHelper) {
         this.msg = msg;
         this.meId = meId;
@@ -51,6 +53,7 @@ public class MessageBubble extends JPanel {
         this.onRecall = onRecall;
         this.onReply = onReply;
         this.onForward = onForward;
+        this.onPin = onPin;
         this.mediaResolver = mediaResolver;
         this.audioHelper = audioHelper;
 
@@ -147,8 +150,8 @@ public class MessageBubble extends JPanel {
             bubble.add(lbl, BorderLayout.CENTER);
         } else {
             bubble = mine
-                    ? new Theme.RoundedPanel(16, Theme.PRIMARY_RED, Theme.PRIMARY_RED_DARK, null)
-                    : new Theme.RoundedPanel(16, Theme.BUBBLE_OTHER, null, null);
+                    ? new Theme.RoundedPanel(14, Theme.PRIMARY_RED, Theme.PRIMARY_RED_DARK, null)
+                    : new Theme.RoundedPanel(14, Color.WHITE, null, Theme.BORDER_PINK);
             bubble.setLayout(new BorderLayout());
             bubble.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
 
@@ -210,13 +213,88 @@ public class MessageBubble extends JPanel {
         String kind = msg.kind == null ? Message.KIND_TEXT : msg.kind;
         return switch (kind) {
             case Message.KIND_IMAGE -> buildImageCard(mine, fg);
-            case Message.KIND_VIDEO -> buildFileActionCard(mine, fg, "🎬", "▶ Phát video",
-                    f -> MediaViewer.openWithSystemPlayer(this, f));
-            case Message.KIND_FILE -> buildFileActionCard(mine, fg, "📎", "⬇ Mở / Tải về",
-                    f -> MediaViewer.openWithSystemPlayer(this, f));
+            case Message.KIND_VIDEO -> buildInlineVideoCard(mine, fg);
+            case Message.KIND_FILE -> buildFileWithDownloadCard(mine, fg);
             case Message.KIND_AUDIO -> buildAudioCard(mine, fg);
-            default -> buildTextArea(msg.content == null ? "" : msg.content, fg);
+            default -> buildTextArea(msg.content == null ? "" : msg.content, mine, fg);
         };
+    }
+
+    /** Phát video MP4 trực tiếp ngay trên bong bóng (JavaFX MediaPlayer) kèm nút Tải về máy riêng. */
+    private JComponent buildInlineVideoCard(boolean mine, Color fg) {
+        JPanel box = new JPanel(new BorderLayout(0, 4));
+        box.setOpaque(false);
+        JLabel status = new JLabel("🎬 Đang chuẩn bị trình phát video...");
+        status.setFont(Theme.emojiFont(12f));
+        status.setForeground(fg);
+        box.add(status, BorderLayout.CENTER);
+
+        if (mediaResolver != null) {
+            mediaResolver.accept(msg, file -> {
+                box.removeAll();
+                if (file == null) {
+                    JLabel miss = new JLabel("🎬 " + (msg.fileName == null ? "Video" : msg.fileName) + " (chỉ lưu cục bộ P2P)");
+                    miss.setFont(Theme.emojiFont(12f));
+                    miss.setForeground(fg);
+                    box.add(miss, BorderLayout.CENTER);
+                } else {
+                    if (activeVideoPlayer != null) activeVideoPlayer.dispose();
+                    activeVideoPlayer = new VideoPlayerPane(
+                            file,
+                            msg.fileName != null ? msg.fileName : file.getName(),
+                            msg.fileSize > 0 ? msg.fileSize : file.length(),
+                            () -> MediaViewer.saveFileAs(MessageBubble.this, file, msg.fileName),
+                            () -> MediaViewer.openWithSystemPlayer(MessageBubble.this, file)
+                    );
+                    box.add(activeVideoPlayer, BorderLayout.CENTER);
+                }
+                box.revalidate();
+                box.repaint();
+                MessageBubble.this.revalidate();
+            });
+        }
+        return box;
+    }
+
+    private JComponent buildFileWithDownloadCard(boolean mine, Color fg) {
+        JPanel box = new JPanel(new BorderLayout(8, 6));
+        box.setOpaque(false);
+        String name = (msg.fileName == null || msg.fileName.isBlank()) ? "Tệp đính kèm" : msg.fileName;
+        String meta = msg.fileSize > 0 ? formatFileSize(msg.fileSize) : "";
+        JLabel title = new JLabel("📎 " + name + (meta.isEmpty() ? "" : " (" + meta + ")"));
+        title.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
+        title.setForeground(fg);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        btns.setOpaque(false);
+        JButton openBtn = mine ? Theme.softButton("📂 Mở") : Theme.primaryButton("📂 Mở");
+        openBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+        JButton dlBtn = Theme.softButton("⬇ Tải về");
+        dlBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+
+        openBtn.addActionListener(e -> {
+            if (mediaResolver == null) return;
+            openBtn.setEnabled(false);
+            mediaResolver.accept(msg, file -> {
+                openBtn.setEnabled(true);
+                if (file == null) JOptionPane.showMessageDialog(this, "Không tìm thấy tệp.");
+                else MediaViewer.openWithSystemPlayer(this, file);
+            });
+        });
+        dlBtn.addActionListener(e -> {
+            if (mediaResolver == null) return;
+            dlBtn.setEnabled(false);
+            mediaResolver.accept(msg, file -> {
+                dlBtn.setEnabled(true);
+                if (file == null) JOptionPane.showMessageDialog(this, "Không tải được tệp.");
+                else MediaViewer.saveFileAs(this, file, msg.fileName);
+            });
+        });
+        btns.add(openBtn);
+        btns.add(dlBtn);
+        box.add(title, BorderLayout.NORTH);
+        box.add(btns, BorderLayout.SOUTH);
+        return box;
     }
 
     private JComponent buildImageCard(boolean mine, Color fg) {
@@ -274,34 +352,6 @@ public class MessageBubble extends JPanel {
         return box;
     }
 
-    private JComponent buildFileActionCard(boolean mine, Color fg, String icon, String btnText, Consumer<File> onFile) {
-        JPanel box = new JPanel(new BorderLayout(10, 4));
-        box.setOpaque(false);
-        String name = (msg.fileName == null || msg.fileName.isBlank()) ? "Tệp đính kèm" : msg.fileName;
-        String meta = msg.fileSize > 0 ? formatFileSize(msg.fileSize) : "";
-        JLabel title = new JLabel(icon + " " + name + (meta.isEmpty() ? "" : " (" + meta + ")"));
-        title.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
-        title.setForeground(fg);
-
-        JButton act = mine ? Theme.softButton(btnText) : Theme.primaryButton(btnText);
-        act.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
-        act.addActionListener(e -> {
-            if (mediaResolver == null) return;
-            act.setEnabled(false);
-            mediaResolver.accept(msg, file -> {
-                act.setEnabled(true);
-                if (file == null) {
-                    JOptionPane.showMessageDialog(this, "Không tìm thấy hoặc không tải được tệp.");
-                    return;
-                }
-                onFile.accept(file);
-            });
-        });
-        box.add(title, BorderLayout.NORTH);
-        box.add(act, BorderLayout.SOUTH);
-        return box;
-    }
-
     private JComponent buildAudioCard(boolean mine, Color fg) {
         JPanel box = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         box.setOpaque(false);
@@ -351,27 +401,25 @@ public class MessageBubble extends JPanel {
         return box;
     }
 
-    private JComponent buildTextArea(String text, Color fg) {
-        JTextArea area = new JTextArea(text);
-        area.setFont(Theme.emojiFont(13.5f));
-        area.setForeground(fg);
-        area.setOpaque(false);
-        area.setEditable(false);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setBorder(null);
+    private JComponent buildTextArea(String text, boolean mine, Color fg) {
+        JTextPane pane = new JTextPane();
+        pane.setOpaque(false);
+        pane.setEditable(false);
+        pane.setBorder(null);
+        Color mentionColor = mine ? new Color(0xFEF08A) : Theme.PRIMARY_PURPLE;
+        EmojiAssets.insertRichText(pane, text, fg, 13.5f, mentionColor);
 
         // Tính chiều rộng gọn theo nội dung, tối đa MAX_TEXT_WIDTH để bong bóng ngắn không bị phình
-        FontMetrics fm = area.getFontMetrics(area.getFont());
+        FontMetrics fm = pane.getFontMetrics(Theme.uiFont(13.5f));
         int longestLine = 0;
         for (String line : text.split("\n", -1)) {
-            longestLine = Math.max(longestLine, fm.stringWidth(line));
+            longestLine = Math.max(longestLine, fm.stringWidth(line) + 12);
         }
-        int targetW = Math.max(24, Math.min(longestLine + 8, MAX_TEXT_WIDTH));
-        area.setSize(new Dimension(targetW, Short.MAX_VALUE));
-        Dimension pref = area.getPreferredSize();
-        area.setPreferredSize(new Dimension(targetW, pref.height));
-        return area;
+        int targetW = Math.max(36, Math.min(longestLine + 10, MAX_TEXT_WIDTH));
+        pane.setSize(new Dimension(targetW, Short.MAX_VALUE));
+        Dimension pref = pane.getPreferredSize();
+        pane.setPreferredSize(new Dimension(Math.min(targetW, MAX_TEXT_WIDTH), Math.max(20, pref.height)));
+        return pane;
     }
 
     /**
@@ -457,9 +505,10 @@ public class MessageBubble extends JPanel {
 
         JPanel reactRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 4));
         reactRow.setBackground(Color.WHITE);
-        for (String emoji : QUICK_REACTIONS) {
-            JButton b = new JButton(emoji);
-            b.setFont(Theme.emojiFont(16f));
+        for (String emoji : EmojiAssets.REACTION_EMOJIS) {
+            ImageIcon ic = EmojiAssets.icon(emoji, 22);
+            JButton b = ic != null ? new JButton(ic) : new JButton(emoji);
+            if (ic == null) b.setFont(Theme.iconFont(16f));
             b.setFocusPainted(false);
             b.setBorderPainted(false);
             b.setContentAreaFilled(false);
@@ -487,6 +536,13 @@ public class MessageBubble extends JPanel {
         });
         menu.add(fwdItem);
 
+        JMenuItem pinItem = new JMenuItem("📌 Ghim tin nhắn");
+        pinItem.setFont(Theme.emojiFont(12.5f));
+        pinItem.addActionListener(ev -> {
+            if (onPin != null) onPin.accept(msg);
+        });
+        menu.add(pinItem);
+
         if (msg.senderId == meId) {
             menu.addSeparator();
             JMenuItem recall = new JMenuItem("Thu hồi tin nhắn");
@@ -500,45 +556,102 @@ public class MessageBubble extends JPanel {
         menu.show(e.getComponent(), e.getX(), e.getY());
     }
 
+    /** Thanh cảm xúc góc dưới bong bóng giống Zalo: huy hiệu đếm emoji màu + nút bung dải 6 emoji nổi. */
     private void renderReactions() {
         reactionsBar.removeAll();
-        if (msg.recalled || msg.reactions == null || msg.reactions.isEmpty()) {
+        if (msg.recalled || Message.KIND_SYSTEM.equals(msg.kind)) {
             reactionsBar.setVisible(false);
         } else {
+            reactionsBar.setVisible(true);
             Map<String, Integer> counts = new LinkedHashMap<>();
-            for (String emoji : msg.reactions.values()) {
-                if (emoji != null && !emoji.isBlank()) {
-                    counts.merge(emoji, 1, Integer::sum);
+            if (msg.reactions != null) {
+                for (String emoji : msg.reactions.values()) {
+                    if (emoji != null && !emoji.isBlank()) {
+                        counts.merge(emoji, 1, Integer::sum);
+                    }
                 }
             }
-            if (counts.isEmpty()) {
-                reactionsBar.setVisible(false);
-            } else {
-                reactionsBar.setVisible(true);
-                String myEmoji = msg.reactions.get(meId);
-                for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-                    String em = entry.getKey();
-                    int c = entry.getValue();
-                    boolean mine = em.equals(myEmoji);
-                    Theme.PillLabel pill = new Theme.PillLabel(
-                            em + " " + c,
-                            mine ? Theme.ITEM_SELECTED : Color.WHITE,
-                            Theme.TEXT_DARK,
-                            11.5f,
-                            true);
-                    pill.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    pill.addMouseListener(new MouseAdapter() {
-                        @Override
-                        public void mouseClicked(MouseEvent e) {
-                            if (onReact != null) onReact.accept(msg, em);
-                        }
-                    });
-                    reactionsBar.add(pill);
-                }
+            String myEmoji = msg.reactions == null ? null : msg.reactions.get(meId);
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                String em = entry.getKey();
+                int c = entry.getValue();
+                boolean isMine = em.equals(myEmoji);
+                Theme.RoundedPanel pill = new Theme.RoundedPanel(12,
+                        isMine ? Theme.ITEM_SELECTED : Color.WHITE, null, Theme.BORDER_PINK);
+                pill.setLayout(new FlowLayout(FlowLayout.CENTER, 3, 1));
+                pill.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
+                pill.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                ImageIcon ic = EmojiAssets.icon(em, 14);
+                JLabel lbl = ic != null ? new JLabel(String.valueOf(c), ic, SwingConstants.LEFT) : new JLabel(em + " " + c);
+                lbl.setFont(Theme.uiFont(Font.BOLD, 11f));
+                lbl.setForeground(Theme.TEXT_DARK);
+                pill.add(lbl);
+                pill.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseClicked(MouseEvent e) {
+                        if (onReact != null) onReact.accept(msg, em);
+                    }
+                });
+                reactionsBar.add(pill);
             }
+
+            // Nút tròn thả cảm xúc góc dưới phải (giống biểu tượng 👍 nhỏ dưới góc bong bóng Zalo)
+            Theme.RoundedPanel trigger = new Theme.RoundedPanel(12, Color.WHITE, null, Theme.BORDER_PINK);
+            trigger.setLayout(new FlowLayout(FlowLayout.CENTER, 2, 1));
+            trigger.setBorder(BorderFactory.createEmptyBorder(1, 5, 1, 5));
+            trigger.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            trigger.setToolTipText("Thả biểu tượng cảm xúc");
+            ImageIcon thumb = EmojiAssets.icon("👍", 13);
+            JLabel plusLbl = thumb != null ? new JLabel("+", thumb, SwingConstants.LEFT) : new JLabel("+");
+            plusLbl.setFont(Theme.uiFont(Font.BOLD, 10.5f));
+            plusLbl.setForeground(Theme.TEXT_MUTED);
+            trigger.add(plusLbl);
+            trigger.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    showFloatingReactionBar(trigger);
+                }
+            });
+            reactionsBar.add(trigger);
         }
         reactionsBar.revalidate();
         reactionsBar.repaint();
+    }
+
+    /** Bung thanh 6 emoji màu nổi (👍 ❤️ 😂 😮 😢 😡) giống Zalo khi bấm nút góc dưới bong bóng. */
+    private void showFloatingReactionBar(Component anchor) {
+        JPopupMenu pop = new JPopupMenu();
+        pop.setBackground(Color.WHITE);
+        pop.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Theme.BORDER_PINK, 1),
+                BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
+        row.setBackground(Color.WHITE);
+        for (String em : EmojiAssets.REACTION_EMOJIS) {
+            ImageIcon ic = EmojiAssets.icon(em, 24);
+            JButton btn = ic != null ? new JButton(ic) : new JButton(em);
+            if (ic == null) btn.setFont(Theme.iconFont(18f));
+            btn.setFocusPainted(false);
+            btn.setBorderPainted(false);
+            btn.setContentAreaFilled(false);
+            btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            btn.setPreferredSize(new Dimension(34, 34));
+            btn.addActionListener(ev -> {
+                pop.setVisible(false);
+                if (onReact != null) onReact.accept(msg, em);
+            });
+            row.add(btn);
+        }
+        pop.add(row);
+        pop.show(anchor, -120, -48);
+    }
+
+    /** Giải phóng JavaFX MediaPlayer (nếu là bong bóng video) khi đổi phòng chat hoặc thoát app. */
+    public void dispose() {
+        if (activeVideoPlayer != null) {
+            activeVideoPlayer.dispose();
+            activeVideoPlayer = null;
+        }
     }
 
     private String buildMetaText() {
@@ -567,6 +680,7 @@ public class MessageBubble extends JPanel {
 
     /** [PUSH -> UI] Đổi nội dung bong bóng sang "Tin nhắn đã được thu hồi" khi nhận gói MSG_RECALLED. */
     public void markRecalled() {
+        dispose();
         msg.recalled = true;
         if (msg.reactions != null) msg.reactions.clear();
         renderBubbleBody();

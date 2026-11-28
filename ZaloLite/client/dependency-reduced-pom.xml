@@ -19,6 +19,18 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
               <transformers>
                 <transformer>
                   <mainClass>com.zalolite.client.ZaloApp</mainClass>
@@ -52,4 +64,7 @@
       </exclusions>
     </dependency>
   </dependencies>
+  <properties>
+    <javafx.version>21.0.2</javafx.version>
+  </properties>
 </project>

@@ -165,6 +165,7 @@ public class ClientHandler implements Runnable {
             case PacketType.MSG_HISTORY -> msgHistory(req);
             case PacketType.MSG_RECALL -> msgRecall(req);
             case PacketType.MSG_REACT -> msgReact(req);
+            case PacketType.MSG_PIN -> msgPin(req);
             case PacketType.MSG_SEARCH -> msgSearch(req);
             case PacketType.TYPING -> typing(req);
             case PacketType.MSG_SEEN -> msgSeen(req);
@@ -749,6 +750,32 @@ public class ClientHandler implements Runnable {
         sessions.sendToAll(convs.getMemberIds(convId),
                 new Packet(PacketType.MSG_REACTED)
                         .put("convId", convId).put("msgId", msgId).put("userId", me.id).put("emoji", emoji));
+    }
+
+    /** [NHẬN] [CSDL] [GỬI] Xử lý MSG_PIN: kiểm tra quyền thành viên, ghim/bỏ ghim tin nhắn trong ConversationDao và đẩy MSG_PINNED tới cả hội thoại. */
+    private void msgPin(Packet req) throws Exception {
+        long convId = req.num("convId");
+        long msgId = req.num("msgId");
+        if (!convs.isMember(convId, me.id)) {
+            send(Packet.error(req, "Bạn không thuộc hội thoại này"));
+            return;
+        }
+        // [CSDL] Cập nhật pinned_msg_id (msgId <= 0 sẽ đặt NULL để bỏ ghim)
+        ConversationDao.PinnedInfo info = convs.pinMessage(convId, msgId > 0 ? msgId : null);
+        long pinnedId = info != null ? msgId : 0;
+        String senderName = info == null ? null : info.senderName();
+        String preview = info == null ? null : info.preview();
+        send(Packet.ok(req)
+                .put("msgId", pinnedId)
+                .put("senderName", senderName)
+                .put("preview", preview));
+        // [GỬI] Đẩy sự kiện MSG_PINNED realtime tới mọi thành viên đang online trong hội thoại
+        sessions.sendToAll(convs.getMemberIds(convId),
+                new Packet(PacketType.MSG_PINNED)
+                        .put("convId", convId)
+                        .put("msgId", pinnedId)
+                        .put("senderName", senderName)
+                        .put("preview", preview));
     }
 
     /** [XỬ LÝ] [GỬI] Xử lý MSG_SEARCH: kiểm tra quyền thành viên và tìm kiếm tin nhắn khớp từ khóa trong hội thoại. */

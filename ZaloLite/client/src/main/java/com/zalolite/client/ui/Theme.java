@@ -32,11 +32,11 @@ public final class Theme {
     public static final Color PRIMARY_RED = new Color(0xE11D48);
     public static final Color PRIMARY_RED_DARK = new Color(0xBE123C);
     public static final Color PRIMARY_PURPLE = new Color(0x6D28D9);
-    public static final Color BUBBLE_OTHER = new Color(0xF3F4F6);
+    public static final Color BUBBLE_OTHER = Color.WHITE;
     public static final Color TEXT_DARK = new Color(0x111827);
     public static final Color TEXT_MUTED = new Color(0x6B7280);
     public static final Color SIDEBAR_BG = Color.WHITE;
-    public static final Color CHAT_BG = Color.WHITE;
+    public static final Color CHAT_BG = new Color(0xF4F5F7);
     public static final Color ITEM_SELECTED = new Color(0xF5F3FF);
     public static final Color ITEM_HOVER = new Color(0xF9FAFB);
     public static final Color BORDER_PINK = new Color(0xE5E7EB);

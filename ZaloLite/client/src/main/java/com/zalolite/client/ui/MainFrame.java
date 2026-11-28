@@ -20,6 +20,7 @@ import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,6 +58,10 @@ public class MainFrame extends JFrame {
     private final JPanel convListBox = new JPanel();
     private final FriendPanel friendPanel;
     private final List<Conversation> conversations = new ArrayList<>();
+    private final Map<Long, String> drafts = new HashMap<>();
+    private boolean unreadOnly;
+    private JButton tabAllBtn;
+    private JButton tabUnreadBtn;
 
     // Right panel
     private final JPanel rightPanel = new JPanel(new BorderLayout());
@@ -228,15 +233,13 @@ public class MainFrame extends JFrame {
         header.setBackground(Theme.SIDEBAR_BG);
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_PINK),
-                BorderFactory.createEmptyBorder(12, 12, 10, 12)
+                BorderFactory.createEmptyBorder(12, 12, 0, 12)
         ));
 
-        JLabel title = new JLabel("Tin nhắn");
-        title.setFont(Theme.uiFont(Font.BOLD, 17f));
-        title.setForeground(Theme.TEXT_DARK);
-        header.add(title, BorderLayout.NORTH);
-
-        convFilterField.putClientProperty("JTextField.placeholderText", "Tìm cuộc trò chuyện...");
+        // Hàng tìm kiếm + 2 nút nhanh +Bạn / +Nhóm giống Zalo PC
+        JPanel searchRow = new JPanel(new BorderLayout(4, 0));
+        searchRow.setOpaque(false);
+        convFilterField.putClientProperty("JTextField.placeholderText", "Tìm kiếm...");
         convFilterField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) { renderConversations(); }
@@ -245,7 +248,29 @@ public class MainFrame extends JFrame {
             @Override
             public void changedUpdate(DocumentEvent e) { renderConversations(); }
         });
-        header.add(convFilterField, BorderLayout.SOUTH);
+        searchRow.add(convFilterField, BorderLayout.CENTER);
+
+        JPanel quickBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        quickBtns.setOpaque(false);
+        JButton addFriendBtn = sidebarIconBtn("👤+", "Thêm bạn / Danh bạ");
+        addFriendBtn.addActionListener(e -> switchTab(TAB_FRIENDS));
+        JButton addGroupBtn = sidebarIconBtn("👥+", "Tạo nhóm chat mới");
+        addGroupBtn.addActionListener(e -> openGroupCreate());
+        quickBtns.add(addFriendBtn);
+        quickBtns.add(addGroupBtn);
+        searchRow.add(quickBtns, BorderLayout.EAST);
+        header.add(searchRow, BorderLayout.NORTH);
+
+        // Thanh tab lọc Tất cả | Chưa đọc
+        JPanel filterTabs = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        filterTabs.setOpaque(false);
+        tabAllBtn = buildFilterTab("Tất cả", true);
+        tabUnreadBtn = buildFilterTab("Chưa đọc", false);
+        tabAllBtn.addActionListener(e -> setUnreadFilter(false));
+        tabUnreadBtn.addActionListener(e -> setUnreadFilter(true));
+        filterTabs.add(tabAllBtn);
+        filterTabs.add(tabUnreadBtn);
+        header.add(filterTabs, BorderLayout.SOUTH);
 
         convListBox.setLayout(new BoxLayout(convListBox, BoxLayout.Y_AXIS));
         convListBox.setBackground(Theme.SIDEBAR_BG);
@@ -259,6 +284,50 @@ public class MainFrame extends JFrame {
         panel.add(header, BorderLayout.NORTH);
         panel.add(scroll, BorderLayout.CENTER);
         return panel;
+    }
+
+    private JButton sidebarIconBtn(String text, String tooltip) {
+        JButton b = new JButton(text);
+        b.setFont(Theme.emojiFont(Font.BOLD, 12.5f));
+        b.setForeground(Theme.TEXT_DARK);
+        b.setToolTipText(tooltip);
+        b.setFocusPainted(false);
+        b.setBorderPainted(false);
+        b.setContentAreaFilled(false);
+        b.setMargin(new Insets(2, 5, 2, 5));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return b;
+    }
+
+    private JButton buildFilterTab(String label, boolean active) {
+        JButton b = new JButton(label);
+        b.setFont(Theme.uiFont(active ? Font.BOLD : Font.PLAIN, 12.5f));
+        b.setForeground(active ? Theme.PRIMARY_RED : Theme.TEXT_MUTED);
+        b.setFocusPainted(false);
+        b.setContentAreaFilled(false);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 2, 0, active ? Theme.PRIMARY_RED : new Color(0, 0, 0, 0)),
+                BorderFactory.createEmptyBorder(4, 2, 6, 2)
+        ));
+        return b;
+    }
+
+    private void setUnreadFilter(boolean onlyUnread) {
+        unreadOnly = onlyUnread;
+        updateTabStyle(tabAllBtn, !onlyUnread);
+        updateTabStyle(tabUnreadBtn, onlyUnread);
+        renderConversations();
+    }
+
+    private void updateTabStyle(JButton b, boolean active) {
+        if (b == null) return;
+        b.setFont(Theme.uiFont(active ? Font.BOLD : Font.PLAIN, 12.5f));
+        b.setForeground(active ? Theme.PRIMARY_RED : Theme.TEXT_MUTED);
+        b.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 2, 0, active ? Theme.PRIMARY_RED : new Color(0, 0, 0, 0)),
+                BorderFactory.createEmptyBorder(4, 2, 6, 2)
+        ));
     }
 
     private void switchTab(String tab) {
@@ -349,6 +418,7 @@ public class MainFrame extends JFrame {
         int shown = 0;
 
         for (Conversation c : conversations) {
+            if (unreadOnly && c.unreadCount <= 0) continue;
             if (!q.isEmpty()) {
                 String n = c.name == null ? "" : c.name.toLowerCase();
                 String lm = c.lastMessage == null ? "" : c.lastMessage.toLowerCase();
@@ -360,9 +430,10 @@ public class MainFrame extends JFrame {
         }
 
         if (shown == 0) {
-            JLabel empty = new JLabel(q.isEmpty()
-                    ? "Chưa có hội thoại nào."
-                    : "Không tìm thấy hội thoại phù hợp.");
+            String msg = unreadOnly
+                    ? "Không có tin nhắn chưa đọc."
+                    : (q.isEmpty() ? "Chưa có hội thoại nào." : "Không tìm thấy hội thoại phù hợp.");
+            JLabel empty = new JLabel(msg);
             empty.setFont(Theme.uiFont(12.5f));
             empty.setForeground(Theme.TEXT_MUTED);
             empty.setBorder(BorderFactory.createEmptyBorder(16, 10, 10, 10));
@@ -406,10 +477,14 @@ public class MainFrame extends JFrame {
 
         JPanel bottomLine = new JPanel(new BorderLayout(6, 0));
         bottomLine.setOpaque(false);
-        String preview = (c.lastMessage == null || c.lastMessage.isBlank()) ? "Bắt đầu trò chuyện" : c.lastMessage;
+        String draft = selected ? null : drafts.get(c.id);
+        boolean hasDraft = draft != null && !draft.isBlank();
+        String preview = hasDraft
+                ? "[Nháp] " + draft
+                : ((c.lastMessage == null || c.lastMessage.isBlank()) ? "Bắt đầu trò chuyện" : c.lastMessage);
         JLabel previewLbl = new JLabel(preview);
-        previewLbl.setFont(Theme.emojiFont(c.unreadCount > 0 ? Font.BOLD : Font.PLAIN, 12f));
-        previewLbl.setForeground(c.unreadCount > 0 ? Theme.TEXT_DARK : Theme.TEXT_MUTED);
+        previewLbl.setFont(Theme.emojiFont((c.unreadCount > 0 || hasDraft) ? Font.BOLD : Font.PLAIN, 12f));
+        previewLbl.setForeground(hasDraft ? Theme.PRIMARY_RED : (c.unreadCount > 0 ? Theme.TEXT_DARK : Theme.TEXT_MUTED));
         bottomLine.add(previewLbl, BorderLayout.CENTER);
 
         if (c.unreadCount > 0) {
@@ -503,12 +578,18 @@ public class MainFrame extends JFrame {
             midCards.show(midPanel, TAB_CHATS);
         }
 
-        if (activeChat != null) activeChat.cleanup();
+        if (activeChat != null) {
+            String prevDraft = activeChat.getDraftText();
+            if (prevDraft == null || prevDraft.isBlank()) drafts.remove(activeChat.getConvId());
+            else drafts.put(activeChat.getConvId(), prevDraft);
+            activeChat.cleanup();
+        }
         Conversation finalTarget = target;
         activeChat = new ChatPanel(conn, me, finalTarget, localMediaFiles,
                 () -> new ArrayList<>(conversations),
                 () -> startOutgoingCall(finalTarget.peerId, finalTarget.name),
                 sent -> {
+                    drafts.remove(finalTarget.id);
                     finalTarget.lastMessage = previewOf(sent);
                     finalTarget.lastTime = sent.createdAt;
                     renderConversations();
@@ -518,10 +599,15 @@ public class MainFrame extends JFrame {
                     renderConversations();
                 },
                 () -> {
+                    drafts.remove(finalTarget.id);
                     conversations.removeIf(x -> x.id == finalTarget.id);
                     showWelcomeScreen();
                     renderConversations();
                 });
+        String savedDraft = drafts.get(finalTarget.id);
+        if (savedDraft != null && !savedDraft.isBlank()) {
+            activeChat.setDraftText(savedDraft);
+        }
 
         rightContent.removeAll();
         rightContent.add(activeChat, BorderLayout.CENTER);
@@ -613,6 +699,7 @@ public class MainFrame extends JFrame {
                     activeChat.onMessageReacted(p.num("msgId"), p.num("userId"), p.str("emoji"));
                 }
             }
+            case PacketType.MSG_PINNED -> handleMsgPinned(p);
             case PacketType.FRIEND_EVENT -> handleFriendEvent(p);
             case PacketType.CONV_UPDATE -> handleConvUpdate(p);
             case PacketType.CALL_OFFER -> handleCallOffer(p);
@@ -785,6 +872,25 @@ public class MainFrame extends JFrame {
         if (convChanged) renderConversations();
         friendPanel.onPresence(userId, online);
         if (activeChat != null) activeChat.onPresence(userId, online);
+    }
+
+    /** [PUSH -> UI] Nhận gói MSG_PINNED: đồng bộ banner tin nhắn ghim ở đầu khung chat. */
+    private void handleMsgPinned(Packet p) {
+        long convId = p.num("convId");
+        long msgId = p.num("msgId");
+        String senderName = p.str("senderName");
+        String preview = p.str("preview");
+        for (Conversation c : conversations) {
+            if (c.id == convId) {
+                c.pinnedMsgId = msgId;
+                c.pinnedMsgSender = msgId > 0 ? senderName : null;
+                c.pinnedMsgPreview = msgId > 0 ? preview : null;
+                break;
+            }
+        }
+        if (activeChat != null && activeChat.getConvId() == convId) {
+            activeChat.onMessagePinned(msgId, senderName, preview);
+        }
     }
 
     /** [PUSH -> UI] Nhận gói FRIEND_EVENT (lời mời/chấp nhận/hủy kết bạn): làm mới FriendPanel và hiện toast. */

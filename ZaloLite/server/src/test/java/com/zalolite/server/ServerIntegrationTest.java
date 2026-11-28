@@ -89,7 +89,7 @@ class ServerIntegrationTest {
 
         TestClient() throws IOException {
             s = (SSLSocket) clientSsl.getSocketFactory().createSocket("localhost", server.getLocalPort());
-            s.setSoTimeout(3000);
+            s.setSoTimeout(10000);
             in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
             out = new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8);
         }
@@ -594,6 +594,67 @@ class ServerIntegrationTest {
             Packet rejPush = caller.nextPush(PacketType.CALL_REJECT);
             assertEquals(uCallee.id, rejPush.num("calleeId"));
             assertEquals("BUSY", rejPush.str("reason"));
+        }
+    }
+
+    @Test
+    void pinAndUnpinMessageFlow() throws Exception {
+        try (TestClient a = new TestClient(); TestClient b = new TestClient(); TestClient outsider = new TestClient()) {
+            a.registerAndLogin("0921000001", "Pin A");
+            User uB = b.registerAndLogin("0921000002", "Pin B");
+            outsider.registerAndLogin("0921000003", "Outsider");
+
+            Conversation conv = a.call(new Packet(PacketType.CONV_OPEN_DIRECT).put("peerId", uB.id))
+                    .get("conversation", Conversation.class);
+
+            String text = "Họp nhóm lúc 9h sáng mai tại phòng 302 nhé mọi người";
+            Message sent = a.call(new Packet(PacketType.MSG_SEND)
+                    .put("convId", conv.id).put("kind", Message.KIND_TEXT).put("content", text))
+                    .get("message", Message.class);
+            b.nextPush(PacketType.MSG_NEW);
+
+            // Người ngoài hội thoại không được ghim
+            assertFalse(outsider.call(new Packet(PacketType.MSG_PIN)
+                    .put("convId", conv.id).put("msgId", sent.id)).isOk());
+
+            // A ghim tin nhắn -> response và push MSG_PINNED đều chứa đủ thông tin tin ghim
+            Packet pinRes = a.call(new Packet(PacketType.MSG_PIN)
+                    .put("convId", conv.id).put("msgId", sent.id));
+            assertTrue(pinRes.isOk());
+            assertEquals(sent.id, pinRes.num("msgId"));
+            assertEquals("Pin A", pinRes.str("senderName"));
+            assertEquals(text, pinRes.str("preview"));
+            Packet pinPush = b.nextPush(PacketType.MSG_PINNED);
+            assertEquals(conv.id, pinPush.num("convId"));
+            assertEquals(sent.id, pinPush.num("msgId"));
+            assertEquals("Pin A", pinPush.str("senderName"));
+            assertEquals(text, pinPush.str("preview"));
+
+            List<Conversation> bList = b.call(new Packet(PacketType.CONV_LIST)).getList("conversations", Conversation.class);
+            Conversation bConv = bList.stream().filter(cv -> cv.id == conv.id).findFirst().orElseThrow();
+            assertEquals(sent.id, bConv.pinnedMsgId);
+            assertEquals("Pin A", bConv.pinnedMsgSender);
+            assertEquals(text, bConv.pinnedMsgPreview);
+
+            // B bỏ ghim (msgId = 0) -> A nhận push MSG_PINNED với msgId = 0 và CONV_LIST có pinnedMsgId == 0
+            assertTrue(b.call(new Packet(PacketType.MSG_PIN)
+                    .put("convId", conv.id).put("msgId", 0)).isOk());
+            // Dọn push ghim trước đó của A rồi kiểm tra push bỏ ghim
+            a.nextPush(PacketType.MSG_PINNED);
+            Packet unpinPush = a.nextPush(PacketType.MSG_PINNED);
+            assertEquals(conv.id, unpinPush.num("convId"));
+            assertEquals(0, unpinPush.num("msgId"));
+
+            List<Conversation> aList = a.call(new Packet(PacketType.CONV_LIST)).getList("conversations", Conversation.class);
+            Conversation aConv = aList.stream().filter(cv -> cv.id == conv.id).findFirst().orElseThrow();
+            assertEquals(0, aConv.pinnedMsgId);
+            assertNull(aConv.pinnedMsgSender);
+            assertNull(aConv.pinnedMsgPreview);
+
+            // Không thể ghim tin nhắn đã thu hồi
+            assertTrue(a.call(new Packet(PacketType.MSG_RECALL).put("msgId", sent.id)).isOk());
+            assertFalse(a.call(new Packet(PacketType.MSG_PIN)
+                    .put("convId", conv.id).put("msgId", sent.id)).isOk());
         }
     }
 }

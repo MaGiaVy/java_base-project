@@ -105,9 +105,7 @@ public final class VoiceCallSession implements AutoCloseable {
     private void runCaptureLoop(InetAddress peerAddr, int peerPort) {
         TargetDataLine mic = null;
         try {
-            DataLine.Info info = new DataLine.Info(TargetDataLine.class, AUDIO_FORMAT);
-            mic = (TargetDataLine) AudioSystem.getLine(info);
-            mic.open(AUDIO_FORMAT, FRAME_BYTES * 4);
+            mic = AudioHelper.openBestMicrophone(AUDIO_FORMAT, AudioHelper.getPreferredMicrophone());
             mic.start();
             this.micLine = mic;
 

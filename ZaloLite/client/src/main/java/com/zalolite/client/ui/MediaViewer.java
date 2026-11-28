@@ -9,6 +9,8 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Tiện ích hiển thị đa phương tiện trên client:
@@ -75,6 +77,12 @@ public final class MediaViewer {
                         }
                     });
                     content.add(label, BorderLayout.CENTER);
+                    JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+                    bar.setOpaque(false);
+                    JButton saveBtn = Theme.primaryButton("⬇ Lưu ảnh về máy");
+                    saveBtn.addActionListener(ev -> saveFileAs(dialog, imageFile, title));
+                    bar.add(saveBtn);
+                    content.add(bar, BorderLayout.SOUTH);
 
                     dialog.getRootPane().registerKeyboardAction(
                             e -> dialog.dispose(),
@@ -88,6 +96,26 @@ public final class MediaViewer {
                 },
                 err -> JOptionPane.showMessageDialog(parent, "Không thể đọc tệp hình ảnh.", "Lỗi", JOptionPane.ERROR_MESSAGE)
         );
+    }
+
+    /** Cho người dùng chọn nơi lưu bản sao tệp/ảnh/video về máy (chạy nền ngoài EDT). */
+    public static void saveFileAs(Component parent, File sourceFile, String suggestedName) {
+        if (sourceFile == null || !sourceFile.isFile()) {
+            JOptionPane.showMessageDialog(parent, "Không tìm thấy tệp để lưu.", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Lưu tệp về máy");
+        String defaultName = (suggestedName != null && !suggestedName.isBlank()) ? suggestedName : sourceFile.getName();
+        fc.setSelectedFile(new File(defaultName));
+        if (fc.showSaveDialog(parent) != JFileChooser.APPROVE_OPTION) return;
+        File dest = fc.getSelectedFile();
+        Theme.runAsync(() -> {
+            Files.copy(sourceFile.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            return dest;
+        }, saved -> JOptionPane.showMessageDialog(parent, "Đã lưu tệp tại:\n" + saved.getAbsolutePath(),
+                "Tải về thành công", JOptionPane.INFORMATION_MESSAGE),
+                err -> JOptionPane.showMessageDialog(parent, "Không thể lưu tệp: " + err, "Lỗi", JOptionPane.ERROR_MESSAGE));
     }
 
     public static void openWithSystemPlayer(Component parent, File file) {

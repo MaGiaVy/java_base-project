@@ -33,6 +33,11 @@ public class Conversation {
     public int unreadCount;
     public boolean pinned;
 
+    // Tin nhắn đang được ghim trong hội thoại (0 nếu chưa ghim)
+    public long pinnedMsgId;
+    public String pinnedMsgSender;
+    public String pinnedMsgPreview;
+
     /** Constructor rỗng phục vụ Jackson deserialize JSON. */
     public Conversation() {
     }

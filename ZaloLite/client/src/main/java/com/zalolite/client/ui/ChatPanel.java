@@ -5,6 +5,7 @@ import com.zalolite.client.Connection;
 import com.zalolite.client.FileTransfer;
 import com.zalolite.client.P2pTransfer;
 import com.zalolite.common.Conversation;
+import com.zalolite.common.Member;
 import com.zalolite.common.Message;
 import com.zalolite.common.Packet;
 import com.zalolite.common.PacketType;
@@ -21,6 +22,8 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.time.LocalDate;
@@ -56,10 +59,12 @@ public class ChatPanel extends JPanel {
     private final Runnable onGroupLeft;
     private final Consumer<String> onGroupRenamed;
 
-    // Header
+    // Header & Pin banner
     private final Theme.AvatarBadge headerAvatar;
     private final JLabel titleLabel = new JLabel();
     private final JLabel subtitleLabel = new JLabel();
+    private final JPanel pinBanner = new JPanel(new BorderLayout(8, 0));
+    private final JLabel pinBannerLabel = new JLabel();
 
     // Search bar
     private final JPanel searchBar = new JPanel(new BorderLayout(6, 6));
@@ -84,14 +89,22 @@ public class ChatPanel extends JPanel {
     private long lastTypingSentMs;
     private boolean sentTypingTrue;
 
-    // Composer
+    // Composer & Voice VU bar & @mention
     private final JTextField inputField = new JTextField();
     private final JButton sendBtn = Theme.primaryButton("Gửi");
     private final JButton voiceBtn;
     private final JProgressBar transferBar = new JProgressBar(0, 100);
+    private final JPanel voiceBar = new JPanel(new BorderLayout(8, 0));
+    private final JLabel voiceTimeLabel = new JLabel("🔴 Đang ghi 00:00");
+    private final JProgressBar voiceVuBar = new JProgressBar(0, 100);
+    private final Timer voiceElapsedTimer;
+    private int voiceElapsedSec;
     private final JPanel replyBar = new JPanel(new BorderLayout(8, 0));
     private final JLabel replyBarLabel = new JLabel();
     private Message replyTarget;
+    private final JPopupMenu mentionPopup = new JPopupMenu();
+    private List<User> cachedGroupMembers;
+    private boolean loadingMembers;
 
     public ChatPanel(Connection conn, User me, Conversation conv,
                      Map<String, File> localMediaFiles,
@@ -166,6 +179,30 @@ public class ChatPanel extends JPanel {
         }
         header.add(headerActions, BorderLayout.EAST);
         topWrap.add(header, BorderLayout.NORTH);
+
+        // --- Pin banner (hiện khi hội thoại có tin nhắn được ghim) ---
+        pinBanner.setBackground(new Color(0xF8F7FF));
+        pinBanner.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xE5E7EB)),
+                BorderFactory.createEmptyBorder(6, 16, 6, 12)));
+        pinBannerLabel.setFont(Theme.emojiFont(12.5f));
+        pinBannerLabel.setForeground(Theme.TEXT_DARK);
+        pinBannerLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        pinBannerLabel.setToolTipText("Bấm để nhảy tới tin nhắn đã ghim");
+        pinBannerLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (conv.pinnedMsgId > 0) scrollToMessage(conv.pinnedMsgId);
+            }
+        });
+        JButton unpinBtn = iconButton("✕", "Bỏ ghim tin nhắn");
+        unpinBtn.setPreferredSize(new Dimension(24, 24));
+        unpinBtn.addActionListener(e -> sendPin(null));
+        pinBanner.add(pinBannerLabel, BorderLayout.CENTER);
+        pinBanner.add(unpinBtn, BorderLayout.EAST);
+        pinBanner.setVisible(false);
+        topWrap.add(pinBanner, BorderLayout.CENTER);
+        refreshPinBanner();
 
         // --- Search bar (ẩn mặc định) ---
         searchBar.setBackground(Theme.SIDEBAR_BG);
@@ -252,50 +289,106 @@ public class ChatPanel extends JPanel {
         replyBar.add(cancelReplyBtn, BorderLayout.EAST);
         replyBar.setVisible(false);
 
+        voiceBar.setBackground(new Color(0xFFF1F2));
+        voiceBar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 3, 0, 0, Theme.PRIMARY_RED),
+                BorderFactory.createEmptyBorder(5, 12, 5, 10)));
+        voiceTimeLabel.setFont(Theme.emojiFont(Font.BOLD, 12f));
+        voiceTimeLabel.setForeground(Theme.PRIMARY_RED);
+        voiceVuBar.setForeground(Theme.PRIMARY_RED);
+        voiceVuBar.setBackground(Color.WHITE);
+        voiceVuBar.setPreferredSize(new Dimension(120, 12));
+        voiceVuBar.setStringPainted(false);
+        JPanel voiceLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        voiceLeft.setOpaque(false);
+        voiceLeft.add(voiceTimeLabel);
+        voiceLeft.add(voiceVuBar);
+        JPanel voiceRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        voiceRight.setOpaque(false);
+        JButton cancelVoiceBtn = Theme.softButton("✕ Huỷ");
+        cancelVoiceBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+        cancelVoiceBtn.addActionListener(e -> cancelVoiceRecord());
+        JButton sendVoiceBtn = Theme.primaryButton("➤ Gửi");
+        sendVoiceBtn.setFont(Theme.emojiFont(Font.BOLD, 11.5f));
+        sendVoiceBtn.addActionListener(e -> finishVoiceRecord());
+        voiceRight.add(cancelVoiceBtn);
+        voiceRight.add(sendVoiceBtn);
+        voiceBar.add(voiceLeft, BorderLayout.CENTER);
+        voiceBar.add(voiceRight, BorderLayout.EAST);
+        voiceBar.setVisible(false);
+
         JPanel barsStack = new JPanel();
         barsStack.setOpaque(false);
         barsStack.setLayout(new BoxLayout(barsStack, BoxLayout.Y_AXIS));
         barsStack.add(transferBar);
+        barsStack.add(voiceBar);
         barsStack.add(replyBar);
         topBottom.add(barsStack, BorderLayout.SOUTH);
         bottom.add(topBottom, BorderLayout.NORTH);
 
-        JPanel composer = new JPanel(new BorderLayout(8, 0));
+        // Composer 2 tầng giống Zalo PC: hàng icon công cụ trên + hàng nhập liệu rộng phía dưới
+        JPanel composer = new JPanel(new BorderLayout());
         composer.setBackground(Color.WHITE);
-        composer.setBorder(BorderFactory.createEmptyBorder(6, 12, 10, 12));
 
-        JPanel leftTools = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        leftTools.setOpaque(false);
-        JButton emojiBtn = iconButton("😊", "Chèn biểu tượng cảm xúc");
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 3));
+        toolbar.setBackground(Color.WHITE);
+        toolbar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xE5E7EB)),
+                BorderFactory.createEmptyBorder(2, 10, 2, 10)));
+
+        JButton emojiBtn = iconButton("", "Chèn biểu tượng cảm xúc");
+        ImageIcon smileIcon = EmojiAssets.icon("😊", 20);
+        if (smileIcon != null) emojiBtn.setIcon(smileIcon);
+        else emojiBtn.setText("😊");
         emojiBtn.addActionListener(e -> {
             EmojiPicker picker = new EmojiPicker(this::insertEmoji);
-            picker.show(emojiBtn, 0, -235);
+            picker.show(emojiBtn, 0, -240);
         });
-        leftTools.add(emojiBtn);
+        toolbar.add(emojiBtn);
 
         JButton imgBtn = iconButton("🖼️", "Gửi hình ảnh");
         imgBtn.addActionListener(e -> chooseAndSendImage());
-        leftTools.add(imgBtn);
+        toolbar.add(imgBtn);
 
-        JButton fileBtn = iconButton("📎", "Gửi tệp, video hoặc âm thanh (.wav)");
+        JButton fileBtn = iconButton("📎", "Gửi tệp, video (.mp4) hoặc âm thanh (.wav)");
         fileBtn.addActionListener(e -> chooseAndSendFile());
-        leftTools.add(fileBtn);
+        toolbar.add(fileBtn);
+
+        JButton shotBtn = iconButton("📸", "Chụp ảnh màn hình và gửi ngay");
+        shotBtn.addActionListener(e -> captureAndSendScreenshot());
+        toolbar.add(shotBtn);
 
         voiceBtn = iconButton("🎤", "Bấm để ghi âm tin nhắn thoại (tối đa 60s)");
         voiceBtn.addActionListener(e -> toggleVoiceRecord());
-        leftTools.add(voiceBtn);
-        composer.add(leftTools, BorderLayout.WEST);
+        toolbar.add(voiceBtn);
+
+        JButton micBtn = iconButton("🎙️", "Chọn nguồn micro (tránh mic ảo bị câm)");
+        micBtn.addActionListener(e -> showMicSelector(micBtn));
+        toolbar.add(micBtn);
+        composer.add(toolbar, BorderLayout.NORTH);
+
+        JPanel inputRow = new JPanel(new BorderLayout(8, 0));
+        inputRow.setBackground(Color.WHITE);
+        inputRow.setBorder(BorderFactory.createEmptyBorder(8, 12, 10, 12));
 
         inputField.setFont(Theme.emojiFont(13.5f));
-        inputField.putClientProperty("JTextField.placeholderText", "Nhập tin nhắn gửi " + conv.name + "...");
+        inputField.putClientProperty("JTextField.placeholderText",
+                (conv.isGroup ? "Nhập @, tin nhắn tới " : "Nhập tin nhắn tới ") + conv.name + "...");
         inputField.setPreferredSize(new Dimension(0, 38));
-        composer.add(inputField, BorderLayout.CENTER);
+        inputRow.add(inputField, BorderLayout.CENTER);
 
         sendBtn.setPreferredSize(new Dimension(78, 38));
-        composer.add(sendBtn, BorderLayout.EAST);
+        inputRow.add(sendBtn, BorderLayout.EAST);
+        composer.add(inputRow, BorderLayout.CENTER);
 
         bottom.add(composer, BorderLayout.CENTER);
         add(bottom, BorderLayout.SOUTH);
+
+        mentionPopup.setFocusable(false);
+        voiceElapsedTimer = new Timer(1000, e -> {
+            voiceElapsedSec++;
+            voiceTimeLabel.setText(String.format("🔴 Đang ghi %02d:%02d", voiceElapsedSec / 60, voiceElapsedSec % 60));
+        });
 
         // Timers typing
         typingClearTimer = new Timer(3500, e -> typingLabel.setText(" "));
@@ -330,12 +423,24 @@ public class ChatPanel extends JPanel {
         return conv;
     }
 
+    public String getDraftText() {
+        return inputField.getText();
+    }
+
+    public void setDraftText(String text) {
+        inputField.setText(text == null ? "" : text);
+    }
+
     public void updateConversation(Conversation updated) {
         if (updated == null) return;
+        if (updated.memberCount != conv.memberCount) cachedGroupMembers = null;
         conv.name = updated.name;
         conv.peerOnline = updated.peerOnline;
         conv.ownerId = updated.ownerId;
         conv.memberCount = updated.memberCount;
+        conv.pinnedMsgId = updated.pinnedMsgId;
+        conv.pinnedMsgSender = updated.pinnedMsgSender;
+        conv.pinnedMsgPreview = updated.pinnedMsgPreview;
         titleLabel.setText(conv.name);
         headerAvatar.setNameAndColor(
                 conv.name,
@@ -343,15 +448,24 @@ public class ChatPanel extends JPanel {
                 !conv.isGroup,
                 conv.peerOnline);
         refreshSubtitle();
+        refreshPinBanner();
     }
 
-    /** Dọn mic/loa và timer khi đổi hội thoại hoặc đóng cửa sổ. */
+    /** Dọn mic/loa, player video và timer khi đổi hội thoại hoặc đóng cửa sổ. */
     public void cleanup() {
         typingClearTimer.stop();
         typingStopTimer.stop();
+        voiceElapsedTimer.stop();
+        mentionPopup.setVisible(false);
         audioHelper.stopPlayback();
         if (audioHelper.isRecording()) {
-            try { audioHelper.stopRecording(); } catch (Exception ignored) {}
+            try {
+                AudioHelper.RecordedAudio rec = audioHelper.stopRecording();
+                if (rec != null && rec.file() != null) rec.file().delete();
+            } catch (Exception ignored) {}
+        }
+        for (MessageBubble b : bubblesById.values()) {
+            b.dispose();
         }
     }
 
@@ -450,7 +564,7 @@ public class ChatPanel extends JPanel {
     private void scrollToMessage(long msgId) {
         MessageBubble b = bubblesById.get(msgId);
         if (b != null) {
-            b.scrollRectToVisible(b.getBounds());
+            messagesBox.scrollRectToVisible(b.getBounds());
         } else {
             JOptionPane.showMessageDialog(this, "Tin nhắn này nằm ở trang cũ hơn — bấm \"Tải thêm tin cũ\" để xem.");
         }
@@ -538,6 +652,9 @@ public class ChatPanel extends JPanel {
     }
 
     private void rebuildMessageList() {
+        for (MessageBubble old : bubblesById.values()) {
+            old.dispose();
+        }
         messagesBox.removeAll();
         bubblesById.clear();
 
@@ -557,7 +674,7 @@ public class ChatPanel extends JPanel {
                 prevDay = d;
             }
             MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
-                    this::startReply, this::forwardMessage, this::resolveMediaFile, audioHelper);
+                    this::startReply, this::forwardMessage, this::sendPin, this::resolveMediaFile, audioHelper);
             bubblesById.put(m.id, bubble);
             messagesBox.add(bubble);
         }
@@ -587,7 +704,7 @@ public class ChatPanel extends JPanel {
         }
         messages.add(m);
         MessageBubble bubble = new MessageBubble(m, me.id, conv.isGroup, this::sendReact, this::sendRecall,
-                this::startReply, this::forwardMessage, this::resolveMediaFile, audioHelper);
+                this::startReply, this::forwardMessage, this::sendPin, this::resolveMediaFile, audioHelper);
         bubblesById.put(m.id, bubble);
         messagesBox.add(bubble);
         messagesBox.revalidate();
@@ -682,10 +799,18 @@ public class ChatPanel extends JPanel {
             return;
         }
         try {
-            audioHelper.startRecording(() -> SwingUtilities.invokeLater(this::finishVoiceRecord));
+            voiceElapsedSec = 0;
+            voiceTimeLabel.setText("🔴 Đang ghi 00:00");
+            voiceVuBar.setValue(0);
+            audioHelper.startRecording(
+                    () -> SwingUtilities.invokeLater(() -> finishVoiceRecord(true)),
+                    lvl -> SwingUtilities.invokeLater(() -> voiceVuBar.setValue(lvl)));
             voiceBtn.setText("⏹");
             voiceBtn.setForeground(Theme.PRIMARY_RED);
             voiceBtn.setToolTipText("Đang ghi âm... Bấm lại để gửi");
+            voiceBar.setVisible(true);
+            voiceElapsedTimer.restart();
+            revalidate();
         } catch (Exception ex) {
             // Dự phòng nếu máy demo không có micro -> cho chọn file .wav có sẵn
             int pick = JOptionPane.showConfirmDialog(this,
@@ -704,19 +829,106 @@ public class ChatPanel extends JPanel {
         }
     }
 
-    private void finishVoiceRecord() {
+    private void cancelVoiceRecord() {
+        voiceElapsedTimer.stop();
+        voiceBar.setVisible(false);
         voiceBtn.setText("🎤");
         voiceBtn.setForeground(Theme.TEXT_DARK);
         voiceBtn.setToolTipText("Bấm để ghi âm tin nhắn thoại (tối đa 60s)");
-        if (!audioHelper.isRecording()) return;
+        if (audioHelper.isRecording()) {
+            try {
+                AudioHelper.RecordedAudio rec = audioHelper.stopRecording();
+                if (rec != null && rec.file() != null) rec.file().delete();
+            } catch (Exception ignored) {}
+        }
+        revalidate();
+    }
+
+    private void finishVoiceRecord() {
+        finishVoiceRecord(false);
+    }
+
+    private void finishVoiceRecord(boolean fromAutoStop) {
+        voiceElapsedTimer.stop();
+        voiceBar.setVisible(false);
+        voiceBtn.setText("🎤");
+        voiceBtn.setForeground(Theme.TEXT_DARK);
+        voiceBtn.setToolTipText("Bấm để ghi âm tin nhắn thoại (tối đa 60s)");
+        revalidate();
+        if (!fromAutoStop && !audioHelper.isRecording()) return;
         try {
             AudioHelper.RecordedAudio rec = audioHelper.stopRecording();
-            if (rec != null && rec.file().exists() && rec.file().length() > 44) {
-                sendMediaFile(rec.file(), Message.KIND_AUDIO, rec.durationSec());
+            if (rec == null || !rec.file().exists() || rec.file().length() <= 44) return;
+            if (rec.peakAmplitude() < 50) {
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        "Micro không thu được tiếng (biên độ rất nhỏ: " + rec.peakAmplitude()
+                                + ").\nHãy bấm nút 🎙️ để đổi sang micro thật (Microphone Array).\nBạn vẫn muốn gửi bản ghi này?",
+                        "Cảnh báo micro câm", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (confirm != JOptionPane.YES_OPTION) {
+                    rec.file().delete();
+                    return;
+                }
             }
+            sendMediaFile(rec.file(), Message.KIND_AUDIO, rec.durationSec());
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Lỗi lưu âm thanh: " + ex.getMessage());
         }
+    }
+
+    private void showMicSelector(Component anchor) {
+        JPopupMenu menu = new JPopupMenu();
+        String current = AudioHelper.getPreferredMicrophone();
+        JMenuItem autoItem = new JMenuItem((current == null ? "✓ " : "   ") + "Tự động (ưu tiên micro thật)");
+        autoItem.setFont(Theme.emojiFont(12f));
+        autoItem.addActionListener(e -> AudioHelper.setPreferredMicrophone(null));
+        menu.add(autoItem);
+        menu.addSeparator();
+        List<String> mics = AudioHelper.listMicrophones();
+        if (mics.isEmpty()) {
+            JMenuItem none = new JMenuItem("(Không tìm thấy thiết bị thu âm)");
+            none.setEnabled(false);
+            menu.add(none);
+        } else {
+            for (String m : mics) {
+                boolean selected = m.equals(current);
+                String tag = AudioHelper.isVirtualMicName(m) ? " [ảo]" : "";
+                JMenuItem item = new JMenuItem((selected ? "✓ " : "   ") + m + tag);
+                item.setFont(Theme.emojiFont(12f));
+                item.addActionListener(e -> AudioHelper.setPreferredMicrophone(m));
+                menu.add(item);
+            }
+        }
+        menu.show(anchor, 0, -menu.getPreferredSize().height);
+    }
+
+    private void captureAndSendScreenshot() {
+        Window win = SwingUtilities.getWindowAncestor(this);
+        Frame frame = win instanceof Frame ? (Frame) win : null;
+        int prevState = frame != null ? frame.getExtendedState() : Frame.NORMAL;
+        if (frame != null) frame.setState(Frame.ICONIFIED);
+        Timer t = new Timer(280, ev -> {
+            try {
+                Rectangle screen = new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+                BufferedImage img = new Robot().createScreenCapture(screen);
+                if (frame != null) {
+                    frame.setExtendedState(prevState);
+                    frame.toFront();
+                }
+                Image scaled = img.getScaledInstance(420, -1, Image.SCALE_SMOOTH);
+                int ok = JOptionPane.showConfirmDialog(this, new JLabel(new ImageIcon(scaled)),
+                        "Gửi ảnh chụp màn hình này?", JOptionPane.YES_NO_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if (ok == JOptionPane.YES_OPTION) {
+                    File tmp = File.createTempFile("zalolite-shot-", ".png");
+                    ImageIO.write(img, "png", tmp);
+                    sendMediaFile(tmp, Message.KIND_IMAGE, 0);
+                }
+            } catch (Exception ex) {
+                if (frame != null) frame.setExtendedState(prevState);
+                JOptionPane.showMessageDialog(this, "Không chụp được màn hình: " + ex.getMessage());
+            }
+        });
+        t.setRepeats(false);
+        t.start();
     }
 
     private void showProgress(String label, long done, long total) {
@@ -1008,6 +1220,36 @@ public class ChatPanel extends JPanel {
         );
     }
 
+    /** [UI -> GỬI] Ghim hoặc bỏ ghim (m == null) tin nhắn lên đầu khung chat (MSG_PIN) qua TLS (:9000). */
+    private void sendPin(Message m) {
+        long targetId = m == null ? 0L : m.id;
+        Theme.runAsync(
+                () -> conn.request(new Packet(PacketType.MSG_PIN)
+                        .put("convId", conv.id).put("msgId", targetId)),
+                res -> {
+                    if (res.isOk()) {
+                        onMessagePinned(res.num("msgId"), res.str("senderName"), res.str("preview"));
+                    } else {
+                        JOptionPane.showMessageDialog(this, res.str("error"));
+                    }
+                },
+                err -> JOptionPane.showMessageDialog(this, err)
+        );
+    }
+
+    private void refreshPinBanner() {
+        if (conv.pinnedMsgId > 0) {
+            String who = (conv.pinnedMsgSender == null || conv.pinnedMsgSender.isBlank()) ? "" : conv.pinnedMsgSender + ": ";
+            String prev = conv.pinnedMsgPreview == null ? "" : conv.pinnedMsgPreview;
+            if (prev.length() > 80) prev = prev.substring(0, 80) + "…";
+            pinBannerLabel.setText("📌 Tin ghim — " + who + prev);
+            pinBanner.setVisible(true);
+        } else {
+            pinBanner.setVisible(false);
+        }
+        revalidate();
+    }
+
     /** [UI -> GỬI] Thu hồi tin nhắn đã gửi (MSG_RECALL) qua TLS (:9000). */
     private void sendRecall(Message m) {
         int ok = JOptionPane.showConfirmDialog(this,
@@ -1044,6 +1286,7 @@ public class ChatPanel extends JPanel {
     }
 
     private void onInputChanged() {
+        checkMentionPopup();
         boolean hasText = !inputField.getText().trim().isEmpty();
         if (!hasText) {
             typingStopTimer.stop();
@@ -1056,6 +1299,79 @@ public class ChatPanel extends JPanel {
             lastTypingSentMs = now;
         }
         typingStopTimer.restart();
+    }
+
+    /** Hiện popup gợi ý @mention thành viên khi gõ '@' trong nhóm chat. */
+    private void checkMentionPopup() {
+        if (!conv.isGroup) return;
+        String text = inputField.getText();
+        int caret = Math.min(inputField.getCaretPosition(), text.length());
+        String before = text.substring(0, caret);
+        int at = before.lastIndexOf('@');
+        if (at < 0 || (at > 0 && !Character.isWhitespace(before.charAt(at - 1)))) {
+            mentionPopup.setVisible(false);
+            return;
+        }
+        String query = before.substring(at + 1);
+        if (query.contains(" ") || query.length() > 24) {
+            mentionPopup.setVisible(false);
+            return;
+        }
+        if (cachedGroupMembers == null) {
+            if (!loadingMembers) {
+                loadingMembers = true;
+                Theme.runAsync(
+                        () -> conn.request(new Packet(PacketType.GROUP_MEMBERS).put("convId", conv.id)),
+                        res -> {
+                            loadingMembers = false;
+                            if (res.isOk()) {
+                                List<Member> ms = res.getList("members", Member.class);
+                                cachedGroupMembers = new ArrayList<>();
+                                for (Member m : ms) {
+                                    if (m != null && m.user != null) cachedGroupMembers.add(m.user);
+                                }
+                                showMentionCandidates(at, query);
+                            }
+                        },
+                        err -> loadingMembers = false);
+            }
+            return;
+        }
+        showMentionCandidates(at, query);
+    }
+
+    private void showMentionCandidates(int atIdx, String query) {
+        if (cachedGroupMembers == null) return;
+        String qLower = query.toLowerCase();
+        mentionPopup.removeAll();
+        int count = 0;
+        for (User u : cachedGroupMembers) {
+            if (u.id == me.id || u.name == null) continue;
+            if (!qLower.isEmpty() && !u.name.toLowerCase().contains(qLower)) continue;
+            JMenuItem item = new JMenuItem("@" + u.name);
+            item.setFont(Theme.emojiFont(12.5f));
+            item.addActionListener(ev -> {
+                String cur = inputField.getText();
+                int caret = Math.min(inputField.getCaretPosition(), cur.length());
+                if (atIdx >= 0 && atIdx <= caret) {
+                    String ins = "@" + u.name + " ";
+                    String next = cur.substring(0, atIdx) + ins + cur.substring(caret);
+                    inputField.setText(next);
+                    inputField.setCaretPosition(atIdx + ins.length());
+                }
+                mentionPopup.setVisible(false);
+                inputField.requestFocusInWindow();
+            });
+            mentionPopup.add(item);
+            if (++count >= 6) break;
+        }
+        if (count == 0) {
+            mentionPopup.setVisible(false);
+        } else {
+            mentionPopup.pack();
+            mentionPopup.show(inputField, 10, -mentionPopup.getPreferredSize().height - 4);
+            inputField.requestFocusInWindow();
+        }
     }
 
     /** [UI -> GỬI] Phát trạng thái đang gõ phím (gói TYPING qua TLS :9000), có debounce 2 giây. */
@@ -1084,6 +1400,20 @@ public class ChatPanel extends JPanel {
     public void onMessageRecalled(long msgId) {
         MessageBubble b = bubblesById.get(msgId);
         if (b != null) b.markRecalled();
+        if (conv.pinnedMsgId == msgId) {
+            conv.pinnedMsgId = 0;
+            conv.pinnedMsgSender = null;
+            conv.pinnedMsgPreview = null;
+            refreshPinBanner();
+        }
+    }
+
+    /** [PUSH -> UI] Cập nhật banner ghim tin nhắn khi nhận MSG_PINNED từ server. */
+    public void onMessagePinned(long msgId, String senderName, String preview) {
+        conv.pinnedMsgId = msgId;
+        conv.pinnedMsgSender = msgId > 0 ? senderName : null;
+        conv.pinnedMsgPreview = msgId > 0 ? preview : null;
+        refreshPinBanner();
     }
 
     /** [PUSH -> UI] Cập nhật biểu tượng cảm xúc trên bong bóng khi nhận MSG_REACTED. */

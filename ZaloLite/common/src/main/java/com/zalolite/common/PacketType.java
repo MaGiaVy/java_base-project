@@ -64,6 +64,8 @@ public final class PacketType {
     public static final String MSG_RECALLED = "MSG_RECALLED"; // push
     public static final String MSG_REACT = "MSG_REACT";
     public static final String MSG_REACTED = "MSG_REACTED"; // push
+    public static final String MSG_PIN = "MSG_PIN";
+    public static final String MSG_PINNED = "MSG_PINNED"; // push
     public static final String MSG_SEARCH = "MSG_SEARCH";
 
     // Trạng thái (State)

@@ -25,7 +25,7 @@ public class ConversationDao {
     /** Tên mặc định cho hộp lưu trữ cá nhân "Cloud của tôi" (mỗi user luôn có sẵn 1 hội thoại Cloud). */
     public static final String CLOUD_NAME = "☁️ Cloud của tôi";
 
-    /** [CSDL] Câu SELECT dùng chung gom đầy đủ thông tin hội thoại, đối phương 1-1, tin nhắn cuối (LATERAL) và số tin chưa đọc. */
+    /** [CSDL] Câu SELECT dùng chung gom đầy đủ thông tin hội thoại, đối phương 1-1, tin nhắn cuối (LATERAL), tin nhắn ghim và số tin chưa đọc. */
     private static final String CONV_SELECT =
             "SELECT c.id, c.is_group, c.name, COALESCE(c.owner_id, 0) AS owner_id, c.avatar, m.pinned, "
                     + "EXTRACT(EPOCH FROM c.created_at) * 1000 AS conv_time, "
@@ -33,12 +33,16 @@ public class ConversationDao {
                     + "pu.id AS peer_id, pu.name AS peer_name, pu.avatar AS peer_avatar, "
                     + "lm.kind AS last_kind, lm.content AS last_content, lm.file_name AS last_file_name, "
                     + "lm.recalled AS last_recalled, lm.ts AS last_ts, "
+                    + "COALESCE(pmsg.id, 0) AS pinned_msg_id, pusr.name AS pinned_msg_sender, "
+                    + "pmsg.kind AS pinned_msg_kind, pmsg.content AS pinned_msg_content, pmsg.file_name AS pinned_msg_file_name, "
                     + "(SELECT COUNT(*) FROM messages um WHERE um.conv_id = c.id AND um.id > m.last_read_msg_id "
                     + "  AND COALESCE(um.sender_id, -1) <> m.user_id AND um.created_at >= m.joined_at) AS unread_count "
                     + "FROM members m "
                     + "JOIN conversations c ON c.id = m.conv_id "
                     + "LEFT JOIN members pm ON NOT c.is_group AND pm.conv_id = c.id AND pm.user_id <> m.user_id "
                     + "LEFT JOIN users pu ON pu.id = pm.user_id "
+                    + "LEFT JOIN messages pmsg ON pmsg.id = c.pinned_msg_id AND pmsg.recalled = false "
+                    + "LEFT JOIN users pusr ON pusr.id = pmsg.sender_id "
                     + "LEFT JOIN LATERAL ("
                     + "  SELECT kind, content, file_name, recalled, EXTRACT(EPOCH FROM created_at) * 1000 AS ts "
                     + "  FROM messages WHERE conv_id = c.id AND created_at >= m.joined_at ORDER BY id DESC LIMIT 1"
@@ -384,6 +388,48 @@ public class ConversationDao {
         }
     }
 
+    /** [CSDL] Thông tin tóm tắt của tin nhắn đang được ghim (người gửi và đoạn xem trước tối đa 80 ký tự). */
+    public record PinnedInfo(String senderName, String preview) {
+    }
+
+    /**
+     * [CSDL] Ghim hoặc bỏ ghim một tin nhắn trong hội thoại (cập nhật cột conversations.pinned_msg_id).
+     * Nếu msgId == null hoặc <= 0 thì đặt NULL để bỏ ghim và trả null; ngược lại xác minh tin thuộc convId và chưa bị thu hồi.
+     */
+    public PinnedInfo pinMessage(long convId, Long msgId) throws SQLException {
+        try (Connection c = db.open()) {
+            if (msgId == null || msgId <= 0) {
+                try (PreparedStatement ps = c.prepareStatement("UPDATE conversations SET pinned_msg_id = NULL WHERE id = ?")) {
+                    ps.setLong(1, convId);
+                    ps.executeUpdate();
+                }
+                return null;
+            }
+            String check = "SELECT u.name, m.kind, m.content, m.file_name "
+                    + "FROM messages m LEFT JOIN users u ON u.id = m.sender_id "
+                    + "WHERE m.id = ? AND m.conv_id = ? AND m.recalled = false";
+            PinnedInfo info;
+            try (PreparedStatement ps = c.prepareStatement(check)) {
+                ps.setLong(1, msgId);
+                ps.setLong(2, convId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        throw new IllegalArgumentException("Tin nhắn không hợp lệ hoặc đã bị thu hồi");
+                    }
+                    info = new PinnedInfo(
+                            rs.getString(1),
+                            formatPinPreview(rs.getString(2), rs.getString(3), rs.getString(4)));
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("UPDATE conversations SET pinned_msg_id = ? WHERE id = ?")) {
+                ps.setLong(1, msgId);
+                ps.setLong(2, convId);
+                ps.executeUpdate();
+            }
+            return info;
+        }
+    }
+
     /** [CSDL] Cập nhật mốc ID tin nhắn đã đọc lớn nhất (GREATEST) cho userId trong hội thoại convId. */
     public void updateLastRead(long convId, long userId, long msgId) throws SQLException {
         try (Connection c = db.open();
@@ -439,7 +485,22 @@ public class ConversationDao {
                 conv.lastMessage = (content != null && !content.isEmpty()) ? content : summarizeKind(kind, fileName);
             }
         }
+
+        conv.pinnedMsgId = rs.getLong("pinned_msg_id");
+        if (conv.pinnedMsgId > 0) {
+            conv.pinnedMsgSender = rs.getString("pinned_msg_sender");
+            conv.pinnedMsgPreview = formatPinPreview(
+                    rs.getString("pinned_msg_kind"),
+                    rs.getString("pinned_msg_content"),
+                    rs.getString("pinned_msg_file_name"));
+        }
         return conv;
+    }
+
+    /** Tạo chuỗi xem trước ngắn (tối đa 80 ký tự) cho thanh tin nhắn ghim ở đầu khung chat. */
+    private static String formatPinPreview(String kind, String content, String fileName) {
+        String text = (content != null && !content.isBlank()) ? content : summarizeKind(kind, fileName);
+        return text.length() > 80 ? text.substring(0, 80) : text;
     }
 
     /** Tạo chuỗi tóm tắt ngắn cho cột danh sách hội thoại khi tin nhắn cuối là ảnh/video/thoại/tệp. */
