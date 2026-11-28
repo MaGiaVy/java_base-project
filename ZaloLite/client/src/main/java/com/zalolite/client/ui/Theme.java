@@ -25,21 +25,21 @@ public final class Theme {
     private Theme() {
     }
 
-    // Bảng màu Berry Pop
-    public static final Color RAIL_BG = new Color(0x5B21B6);
-    public static final Color RAIL_HOVER = new Color(0x6D28D9);
-    public static final Color RAIL_ACTIVE = new Color(0x7C3AED);
+    // Bảng màu Berry Clean (nền trắng sạch kiểu Zalo PC + điểm nhấn tím mận & đỏ dâu)
+    public static final Color RAIL_BG = new Color(0x4C1D95);
+    public static final Color RAIL_HOVER = new Color(0x5B21B6);
+    public static final Color RAIL_ACTIVE = new Color(0x6D28D9);
     public static final Color PRIMARY_RED = new Color(0xE11D48);
     public static final Color PRIMARY_RED_DARK = new Color(0xBE123C);
-    public static final Color PRIMARY_PURPLE = new Color(0x9333EA);
-    public static final Color BUBBLE_OTHER = new Color(0xF3E8FF);
-    public static final Color TEXT_DARK = new Color(0x2E1065);
-    public static final Color TEXT_MUTED = new Color(0x7E22CE);
-    public static final Color SIDEBAR_BG = new Color(0xFFF5F8);
-    public static final Color CHAT_BG = new Color(0xFFF9FB);
-    public static final Color ITEM_SELECTED = new Color(0xFCE7F3);
-    public static final Color ITEM_HOVER = new Color(0xFDF2F8);
-    public static final Color BORDER_PINK = new Color(0xF5D0E6);
+    public static final Color PRIMARY_PURPLE = new Color(0x6D28D9);
+    public static final Color BUBBLE_OTHER = new Color(0xF3F4F6);
+    public static final Color TEXT_DARK = new Color(0x111827);
+    public static final Color TEXT_MUTED = new Color(0x6B7280);
+    public static final Color SIDEBAR_BG = Color.WHITE;
+    public static final Color CHAT_BG = Color.WHITE;
+    public static final Color ITEM_SELECTED = new Color(0xF5F3FF);
+    public static final Color ITEM_HOVER = new Color(0xF9FAFB);
+    public static final Color BORDER_PINK = new Color(0xE5E7EB);
     public static final Color ONLINE_GREEN = new Color(0x10B981);
 
     private static final Color[] AVATAR_PALETTE = {
